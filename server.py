@@ -77,7 +77,7 @@ if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     port = int(os.environ.get('PORT', 8081))
     server = ThreadingHTTPServer(('0.0.0.0', port), PG17Handler)
-    print(f'PG17 Voxel Tower running at http://localhost:{port}')
+    print(f'Virtual Intel Campus running at http://localhost:{port}')
     try:
         server.serve_forever()
     except KeyboardInterrupt:

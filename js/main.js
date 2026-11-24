@@ -54,7 +54,7 @@
   }
 
   function detectZone(world, x, y, z) {
-    if (x < 4 || x > 63 || z < 6 || z > 34) return 'PG17 Campus Arrival Plaza (Floor 1)';
+    if (x < 4 || x > 63 || z < 6 || z > 34) return 'Virtual Intel Campus Arrival Plaza (Floor 1)';
     const lvl = world.getFloorAtY(y);
     const wing = x <= 25 ? 'L1' : (x >= 42 ? 'L2' : 'LL');
 
@@ -479,22 +479,22 @@
       for (const [bx, by, bz] of probes) {
         const blk = world.get(bx, by, bz);
         if (blk === BLOCKS.COFFEE_BAR) {
-          return { title: '☕ PG17 Espresso Bar', msg: '▶ You brewed a fresh double-shot latte! Energy restored!' };
+          return { title: '☕ Virtual Intel Campus Espresso Bar', msg: '▶ You brewed a fresh double-shot latte! Energy restored!' };
         }
         if (blk === BLOCKS.PINGPONG) {
           return { title: '🏓 Ping-Pong Table', msg: '▶ Rally time! Smashed a cross-court spin shot in the Relax Corner!' };
         }
         if (blk === BLOCKS.GYM_MACHINE) {
-          return { title: '🏋️ PG17 Fitness Station', msg: '▶ Completed a quick workout set! Feeling stronger for the next floor!' };
+          return { title: '🏋️ Virtual Intel Campus Fitness Station', msg: '▶ Completed a quick workout set! Feeling stronger for the next floor!' };
         }
         if (blk === BLOCKS.YOGA_MAT) {
           return { title: '🧘 Forest Yoga Studio', msg: '▶ Deep breath on the yoga mat... +10 Calmness!' };
         }
         if (blk === BLOCKS.ELEVATOR) {
-          return { title: '🛗 PG17 Lift Bank', msg: '▶ Tip: Use the Elevator Panel on the top-right to jump to any unlocked Floor (F1–F6)!' };
+          return { title: '🛗 Virtual Intel Campus Lift Bank', msg: '▶ Tip: Use the Elevator Panel on the top-right to jump to any unlocked Floor (F1–F6)!' };
         }
         if (blk === BLOCKS.LOCKER) {
-          return { title: '🔐 Fitness Locker Cubbies', msg: '▶ Stored gym bag safely in the PG17 Fitness Lockers.' };
+          return { title: '🔐 Fitness Locker Cubbies', msg: '▶ Stored gym bag safely in the Virtual Intel Campus Fitness Lockers.' };
         }
       }
       return null;
@@ -597,7 +597,7 @@
     const DEFAULT_FIREBASE_URL = '';
     const FB_STORAGE_KEY = 'pg17_firebase_url_v1';
     const ROOM_STORAGE_KEY = 'pg17_live_room_v1';
-    const DEFAULT_ROOM_ID = 'pg17-chinseang88';
+    const DEFAULT_ROOM_ID = 'intel-campus-live';
     const MQTT_BROKERS = [
       'wss://broker.emqx.io:8084/mqtt',
       'wss://broker.hivemq.com:8884/mqtt',
@@ -661,7 +661,7 @@
     const mqttPeers = new Map(); // id -> { id, name, level, x, y, z, yaw, ts }
 
     function topicPrefix() {
-      return `vcampus_pg17/${roomId}`;
+      return `vcampus_intel/${roomId}`;
     }
 
     function disconnectMqtt() {
@@ -1438,7 +1438,7 @@
     const loadingEl = document.getElementById('loading-overlay');
     if (loadingEl) loadingEl.style.display = 'none';
 
-    pushChat('', 'Welcome to PG17 Interactive Campus (Floors 1–6)! Walk with WASD, Arrows, or Click-to-Move.', true);
+    pushChat('', 'Welcome to Virtual Intel Campus (Floors 1–6)! Walk with WASD, Arrows, or Click-to-Move.', true);
     pushChat('', 'Click any person or press [E] near someone to talk! Click unique items on each floor to interact!', true);
 
     const roomNameEl = document.getElementById('room-name');
@@ -1741,7 +1741,7 @@
       crowd.update(dt, camera.position, playerPos, getActiveSliceMaxY());
 
       roomNameEl.textContent = detectZone(world, playerPos.x, playerPos.y, playerPos.z);
-      totalBadgeEl.textContent = `${crowd.npcs.length + crowd.remotePlayers.size + 1} Active in PG17 (${roster.users.length} Roster)`;
+      totalBadgeEl.textContent = `${crowd.npcs.length + crowd.remotePlayers.size + 1} Active in Virtual Intel Campus (${roster.users.length} Roster)`;
 
       renderer.render(scene, camera);
     }

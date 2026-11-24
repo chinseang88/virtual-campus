@@ -231,9 +231,9 @@
       if (typeof global.XLSX !== 'undefined') {
         const ws = global.XLSX.utils.json_to_sheet(rows);
         const wb = global.XLSX.utils.book_new();
-        global.XLSX.utils.book_append_sheet(wb, ws, 'PG17_Users');
-        global.XLSX.writeFile(wb, 'pg17_user_access_list.xlsx');
-        return 'pg17_user_access_list.xlsx';
+        global.XLSX.utils.book_append_sheet(wb, ws, 'Virtual_Intel_Campus_Users');
+        global.XLSX.writeFile(wb, 'virtual_intel_campus_users.xlsx');
+        return 'virtual_intel_campus_users.xlsx';
       }
 
       // Fallback CSV export
@@ -242,10 +242,10 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'pg17_user_access_list.csv';
+      a.download = 'virtual_intel_campus_users.csv';
       a.click();
       URL.revokeObjectURL(url);
-      return 'pg17_user_access_list.csv';
+      return 'virtual_intel_campus_users.csv';
     }
   }
 

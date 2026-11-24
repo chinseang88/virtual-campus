@@ -519,7 +519,7 @@
     return {
       id: 'world_globe',
       level: 6,
-      name: 'PG17 Holographic World Globe',
+      name: 'Virtual Intel Campus World Globe',
       actionLabel: 'Turbo-Spin Map Globe',
       group: root,
       homePos: new THREE.Vector3(34.0, 32, 27.0),
@@ -578,11 +578,11 @@
 
     // Floor label on the right side
     ctx.fillStyle = '#0f172a';
-    ctx.font = 'bold 54px "Segoe UI", Arial, sans-serif';
-    ctx.fillText(`PG17 • FLOOR ${lvl.level}`, 510, 138);
+    ctx.font = 'bold 38px "Segoe UI", Arial, sans-serif';
+    ctx.fillText('VIRTUAL INTEL CAMPUS', 495, 134);
     ctx.fillStyle = '#475569';
-    ctx.font = '600 36px "Segoe UI", Arial, sans-serif';
-    ctx.fillText(lvl.shortName, 510, 200);
+    ctx.font = '600 32px "Segoe UI", Arial, sans-serif';
+    ctx.fillText(`FLOOR ${lvl.level} • ${lvl.shortName}`, 495, 196);
 
     const wallTex = new THREE.CanvasTexture(wc);
     wallTex.anisotropy = 8;
@@ -607,11 +607,11 @@
     fctx.fillRect(88, 86, 32, 32);
 
     fctx.fillStyle = '#38bdf8';
-    fctx.font = 'bold 60px "Segoe UI", Arial, sans-serif';
-    fctx.fillText(`PG17 F${lvl.level}`, 560, 175);
+    fctx.font = 'bold 40px "Segoe UI", Arial, sans-serif';
+    fctx.fillText('VIRTUAL INTEL CAMPUS', 500, 174);
     fctx.fillStyle = '#cbd5e1';
-    fctx.font = '600 36px "Segoe UI", Arial, sans-serif';
-    fctx.fillText(lvl.shortName, 560, 238);
+    fctx.font = '600 32px "Segoe UI", Arial, sans-serif';
+    fctx.fillText(`FLOOR ${lvl.level} • ${lvl.shortName}`, 500, 234);
 
     const floorTex = new THREE.CanvasTexture(fc);
     floorTex.anisotropy = 8;

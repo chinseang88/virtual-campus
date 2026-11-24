@@ -19,7 +19,7 @@
 
   const FLOOR_GREETINGS = {
     1: [
-      'Welcome to PG17 Floor 1! Have you seen the Wooden Trojan Horse in the West Atrium?',
+      'Welcome to Virtual Intel Campus Floor 1! Have you seen the Wooden Trojan Horse in the West Atrium?',
       'Check your Excel access level anytime with [U] — leveling up unlocks higher floors!',
     ],
     2: [
