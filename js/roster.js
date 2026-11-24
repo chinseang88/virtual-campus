@@ -2,8 +2,27 @@
 (function (global) {
   const STORAGE_KEY = 'pg17_voxel_roster_v2';
   const ACTIVE_USER_KEY = 'pg17_voxel_active_user_v2';
+  const ADMIN_PIN_KEY = 'vcampus_admin_pin_hash_v1';
+  const ADMIN_SESSION_KEY = 'vcampus_super_user_v1';
 
   const LEVEL_ORDER = [1, 2, 3, 4, 5, 6];
+
+  function hashPin(pin) {
+    // Simple deterministic salted digest so PIN isn't stored plaintext in localStorage/MQTT
+    const str = 'vc_intel_salt_2026:' + String(pin || '');
+    let h1 = 0x811c9dc5;
+    let h2 = 0x9e3779b9;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      h1 ^= c;
+      h1 = Math.imul(h1, 16777619);
+      h2 ^= c + (i << 3);
+      h2 = Math.imul(h2, 2246822519);
+    }
+    return ((h1 >>> 0).toString(16).padStart(8, '0')) + ((h2 >>> 0).toString(16).padStart(8, '0'));
+  }
+
+  const DEFAULT_PIN_HASH = hashPin('intel88');
 
   const DEFAULT_USERS = [
     { name: 'Alex',   level: 1, role: 'Visitor (Troy Lobby)' },
@@ -106,6 +125,41 @@
       this.activeUserName = savedActive && this.findUser(savedActive)
         ? savedActive
         : (this.users[0] ? this.users[0].name : 'Guest');
+      this.pinHash = localStorage.getItem(ADMIN_PIN_KEY) || DEFAULT_PIN_HASH;
+      this.isSuperUser = sessionStorage.getItem(ADMIN_SESSION_KEY) === '1';
+    }
+
+    verifyAndUnlockSuperUser(pin) {
+      if (hashPin(String(pin || '').trim()) === this.pinHash) {
+        this.isSuperUser = true;
+        try { sessionStorage.setItem(ADMIN_SESSION_KEY, '1'); } catch (e) { /* ignore */ }
+        if (this.onChange) this.onChange();
+        return true;
+      }
+      return false;
+    }
+
+    lockSuperUser() {
+      this.isSuperUser = false;
+      try { sessionStorage.removeItem(ADMIN_SESSION_KEY); } catch (e) { /* ignore */ }
+      if (this.onChange) this.onChange();
+    }
+
+    changeAdminPin(newPin) {
+      if (!this.isSuperUser) return false;
+      const clean = String(newPin || '').trim();
+      if (clean.length < 4) return false;
+      this.pinHash = hashPin(clean);
+      try { localStorage.setItem(ADMIN_PIN_KEY, this.pinHash); } catch (e) { /* ignore */ }
+      this.save(true);
+      return true;
+    }
+
+    applyRemotePinHash(remoteHash) {
+      if (remoteHash && typeof remoteHash === 'string' && remoteHash.length === 16) {
+        this.pinHash = remoteHash;
+        try { localStorage.setItem(ADMIN_PIN_KEY, remoteHash); } catch (e) { /* ignore */ }
+      }
     }
 
     loadUsers() {
@@ -119,12 +173,12 @@
       return DEFAULT_USERS.map((u) => ({ ...u }));
     }
 
-    save() {
+    save(broadcast = false) {
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(this.users));
         localStorage.setItem(ACTIVE_USER_KEY, this.activeUserName);
       } catch (e) { /* ignore */ }
-      if (this.onChange) this.onChange();
+      if (this.onChange) this.onChange(broadcast);
     }
 
     findUser(name) {
@@ -133,7 +187,12 @@
     }
 
     getActiveUser() {
-      return this.findUser(this.activeUserName) || this.users[0] || { name: 'Guest', level: 1, role: 'Visitor' };
+      const base = this.findUser(this.activeUserName) || this.users[0] || { name: 'Guest', level: 1, role: 'Visitor' };
+      // Super User always has full F1-F6 access while unlocked
+      if (this.isSuperUser) {
+        return { ...base, level: 6, role: `${base.role || 'Member'} • Super User` };
+      }
+      return base;
     }
 
     login(name) {
@@ -141,16 +200,17 @@
       if (!clean) return null;
       let u = this.findUser(clean);
       if (!u) {
-        // Unknown user defaults to Level 1 (Main Lobby only) until added/upgraded
+        // Unknown visitors start at Floor 1 only (not broadcast as an authoritative roster edit)
         u = { name: clean.slice(0, 24), level: 1, role: 'Guest' };
         this.users.push(u);
       }
       this.activeUserName = u.name;
-      this.save();
-      return u;
+      this.save(false);
+      return this.getActiveUser();
     }
 
     addOrUpdateUser(name, level, role = 'Member') {
+      if (!this.isSuperUser) return null;
       const clean = String(name || '').trim();
       if (!clean) return null;
       const lvl = parseLevelValue(level);
@@ -161,35 +221,49 @@
       } else {
         this.users.push({ name: clean.slice(0, 24), level: lvl, role: role || 'Member' });
       }
-      this.save();
+      this.save(true);
       return this.findUser(clean);
     }
 
+    setUserLevel(name, level) {
+      if (!this.isSuperUser) return null;
+      const u = this.findUser(name);
+      if (!u) return null;
+      u.level = parseLevelValue(level);
+      this.save(true);
+      return u;
+    }
+
     removeUser(name) {
-      if (this.users.length <= 1) return;
+      if (!this.isSuperUser || this.users.length <= 1) return;
       this.users = this.users.filter((u) => u.name.toLowerCase() !== String(name).toLowerCase());
       if (!this.findUser(this.activeUserName) && this.users[0]) {
         this.activeUserName = this.users[0].name;
       }
-      this.save();
+      this.save(true);
     }
 
     levelUpUser(name) {
+      if (!this.isSuperUser) return null;
       const u = this.findUser(name);
       if (!u) return null;
       const next = nextUpgradeLevel(u.level);
       u.level = next;
-      this.save();
+      this.save(true);
       return u;
     }
 
     resetDefaults() {
+      if (!this.isSuperUser) return;
       this.users = DEFAULT_USERS.map((u) => ({ ...u }));
       this.activeUserName = this.users[0].name;
-      this.save();
+      this.save(true);
     }
 
     async importFile(file) {
+      if (!this.isSuperUser) {
+        throw new Error('Super User unlock required to upload Excel access lists.');
+      }
       const ext = (file.name.split('.').pop() || '').toLowerCase();
       let imported = [];
 
@@ -217,7 +291,7 @@
       if (!this.findUser(this.activeUserName) && this.users[0]) {
         this.activeUserName = this.users[0].name;
       }
-      this.save();
+      this.save(true);
       return this.users.length;
     }
 

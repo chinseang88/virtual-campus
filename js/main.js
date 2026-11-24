@@ -738,7 +738,8 @@
                 lastRosterSyncTs = msg.updatedAt;
                 isApplyingRemoteRoster = true;
                 roster.users = msg.users;
-                origRosterSave();
+                if (msg.pinHash) roster.applyRemotePinHash(msg.pinHash);
+                origRosterSave(false);
                 isApplyingRemoteRoster = false;
               }
             }
@@ -778,14 +779,15 @@
     });
 
     async function pushRosterShared() {
-      if (isApplyingRemoteRoster) return;
+      if (isApplyingRemoteRoster || !roster.isSuperUser) return;
       const ts = Date.now();
       lastRosterSyncTs = ts;
+      const payload = { updatedAt: ts, users: roster.users, pinHash: roster.pinHash };
       if (mqttClient && mqttConnected) {
         try {
           mqttClient.publish(
             `${topicPrefix()}/roster`,
-            JSON.stringify({ updatedAt: ts, users: roster.users }),
+            JSON.stringify(payload),
             { retain: true }
           );
         } catch (e) { /* ignore */ }
@@ -796,7 +798,7 @@
         await fetch(`${firebaseUrl}/roster.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ updatedAt: ts, users: roster.users }),
+          body: JSON.stringify(payload),
         });
       } catch (e) { /* ignore */ }
     }
@@ -835,11 +837,13 @@
       } catch (e) { syncEnabled = false; }
     }
 
-    // Hook roster changes to sync shared Excel list
+    // Hook roster changes to sync shared Excel list (Super User authoritative edits only!)
     const origRosterSave = roster.save.bind(roster);
-    roster.save = function () {
-      origRosterSave();
-      pushRosterShared();
+    roster.save = function (broadcast = false) {
+      origRosterSave(broadcast);
+      if (broadcast && roster.isSuperUser) {
+        pushRosterShared();
+      }
     };
 
     // Start Zero-Account MQTT Live Room automatically on static hosts (github.io, sharepoint, etc.)
@@ -921,7 +925,8 @@
             lastRosterSyncTs = rData.updatedAt;
             isApplyingRemoteRoster = true;
             roster.users = rData.users;
-            origRosterSave();
+            if (rData.pinHash) roster.applyRemotePinHash(rData.pinHash);
+            origRosterSave(false);
             isApplyingRemoteRoster = false;
           }
         }
@@ -997,16 +1002,37 @@
       const user = roster.getActiveUser();
       const maxFloor = world.getMaxAllowedFloorObj(user.level);
       const nextLvl = nextUpgradeLevel(user.level);
-      hudUserEl.innerHTML = `<strong>${escapeHtml(user.name)}</strong> • Access Floor ${user.level} <span class="badge-pill" style="background:${maxFloor.accent};color:#0f172a">F1 → F${maxFloor.level}</span>`;
-      if (maxFloor.level >= 6) {
+      const crown = roster.isSuperUser ? '👑 ' : '';
+      hudUserEl.innerHTML = `<strong>${crown}${escapeHtml(user.name)}</strong> • Access Floor ${user.level} <span class="badge-pill" style="background:${maxFloor.accent};color:#0f172a">F1 → F${maxFloor.level}</span>`;
+      if (roster.isSuperUser) {
+        hudUpgradeEl.textContent = '👑 Super User Mode: Full F1–F6 access & floor control unlocked.';
+      } else if (maxFloor.level >= 6) {
         hudUpgradeEl.textContent = `✨ Top Floor Unlocked! Full access to Floors 1 → 6.`;
       } else {
         const nextObj = PG17_LEVELS.find((l) => l.level === nextLvl);
-        hudUpgradeEl.textContent = `⬆️ Next Level Up (F${nextLvl}): ${nextObj ? nextObj.upgradeNote : ''}`;
+        hudUpgradeEl.textContent = `⬆️ Floor ${nextLvl} (${nextObj ? nextObj.shortName : ''}) requires Super User grant.`;
       }
+
+      const btnDrawer = document.getElementById('btn-toggle-drawer');
       const btnUp = document.getElementById('btn-level-up-me');
+      btnUp.style.display = roster.isSuperUser ? 'block' : 'none';
+      btnDrawer.classList.toggle('wide', !roster.isSuperUser);
+      btnDrawer.textContent = roster.isSuperUser ? 'Admin / Users [U]' : 'Login / Live Room [U]';
       btnUp.disabled = maxFloor.level >= 6;
       btnUp.textContent = maxFloor.level >= 6 ? 'Max Floor (F6)' : `Level Up Me → F${nextLvl}`;
+
+      // Toggle Super User controls in drawer
+      const unlockForm = document.getElementById('super-unlock-form');
+      const superActiveBox = document.getElementById('super-active-controls');
+      const superTitle = document.getElementById('super-user-title');
+      if (unlockForm && superActiveBox && superTitle) {
+        unlockForm.style.display = roster.isSuperUser ? 'none' : 'flex';
+        superActiveBox.style.display = roster.isSuperUser ? 'flex' : 'none';
+        superTitle.textContent = roster.isSuperUser ? '👑 Super User Control (Unlocked)' : '👑 Super User Control (Locked)';
+      }
+      document.querySelectorAll('.admin-only').forEach((el) => {
+        el.style.display = roster.isSuperUser ? '' : 'none';
+      });
     }
 
     function renderFloorButtons() {
@@ -1035,8 +1061,43 @@
 
     function renderRosterList() {
       const active = roster.getActiveUser();
-      rosterSummaryEl.textContent = `${roster.users.length} Users in Excel Access List`;
+      rosterSummaryEl.textContent = roster.isSuperUser
+        ? `${roster.users.length} Users (Super User Can Change Floors)`
+        : `${roster.users.length} Users (Floor Access Managed by Super User)`;
       rosterListEl.innerHTML = '';
+
+      // Show live online guests not yet in roster so Super User can grant them floor access immediately
+      if (roster.isSuperUser) {
+        const seenGuests = new Set();
+        for (const r of crowd.remotePlayers.values()) {
+          const rKey = r.name.toLowerCase();
+          if (roster.findUser(r.name) || seenGuests.has(rKey)) continue;
+          seenGuests.add(rKey);
+          const gRow = document.createElement('div');
+          gRow.className = 'roster-row';
+          gRow.style.borderColor = 'rgba(56, 189, 248, 0.55)';
+          gRow.innerHTML = `
+            <div class="roster-info">
+              <span class="roster-name">🟢 ${escapeHtml(r.name)} (Online Guest)</span>
+              <span class="roster-meta">Currently Floor ${r.level} — Select floor to grant access</span>
+            </div>
+            <div class="roster-actions">
+              <select class="lvl-select" title="Grant ${escapeHtml(r.name)} floor access">
+                ${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${r.level === n ? 'selected' : ''}>F${n}</option>`).join('')}
+              </select>
+            </div>
+          `;
+          gRow.querySelector('.lvl-select').addEventListener('change', (e) => {
+            const newLvl = parseInt(e.target.value, 10);
+            const updated = roster.addOrUpdateUser(r.name, newLvl, 'Live Member');
+            if (updated) {
+              sfx.levelUp();
+              showToast(`👑 Granted ${updated.name} access to Floor ${updated.level} — synced live!`, false);
+            }
+          });
+          rosterListEl.appendChild(gRow);
+        }
+      }
 
       const sorted = [...roster.users].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
       sorted.forEach((u) => {
@@ -1044,6 +1105,12 @@
         const maxFl = world.getMaxAllowedFloorObj(u.level);
         const row = document.createElement('div');
         row.className = 'roster-row' + (isMe ? ' active-me' : '');
+        const adminControls = roster.isSuperUser
+          ? `<select class="lvl-select" title="Change ${escapeHtml(u.name)} floor access">
+              ${[1, 2, 3, 4, 5, 6].map((n) => `<option value="${n}" ${u.level === n ? 'selected' : ''}>F${n}</option>`).join('')}
+            </select>
+            <button class="mini-btn del-btn" title="Remove">✕</button>`
+          : '';
         row.innerHTML = `
           <div class="roster-info">
             <span class="roster-name">${escapeHtml(u.name)}${isMe ? ' (You)' : ''}</span>
@@ -1051,8 +1118,7 @@
           </div>
           <div class="roster-actions">
             <button class="mini-btn login-btn">${isMe ? 'Active' : 'Login'}</button>
-            <button class="mini-btn up-btn" ${u.level >= 6 ? 'disabled' : ''}>+Lvl</button>
-            <button class="mini-btn del-btn">✕</button>
+            ${adminControls}
           </div>
         `;
         row.querySelector('.login-btn').addEventListener('click', () => {
@@ -1060,18 +1126,21 @@
           applyActiveUserState(true);
           pushChat('', `🔑 Logged in as ${u.name} (Floor ${u.level} — walks F1..F${maxFl.level})`, true);
         });
-        row.querySelector('.up-btn').addEventListener('click', () => {
-          const updated = roster.levelUpUser(u.name);
-          if (updated) {
-            sfx.levelUp();
-            const newFl = world.getMaxAllowedFloorObj(updated.level);
-            showToast(`⬆️ ${updated.name} leveled up to Floor ${updated.level} (${newFl.shortName})!`, false);
-            pushChat('', `✨ ${updated.name} leveled up to Floor ${updated.level}! Unlocked ${newFl.shortName}.`, true);
-          }
-        });
-        row.querySelector('.del-btn').addEventListener('click', () => {
-          roster.removeUser(u.name);
-        });
+        if (roster.isSuperUser) {
+          row.querySelector('.lvl-select').addEventListener('change', (e) => {
+            const newLvl = parseInt(e.target.value, 10);
+            const updated = roster.setUserLevel(u.name, newLvl);
+            if (updated) {
+              sfx.levelUp();
+              const newFl = world.getMaxAllowedFloorObj(updated.level);
+              showToast(`👑 Set ${updated.name} access to Floor ${updated.level} (${newFl.shortName}) — synced live!`, false);
+              pushChat('', `👑 Super User set ${updated.name} floor access to Floor ${updated.level} (${newFl.shortName}).`, true);
+            }
+          });
+          row.querySelector('.del-btn').addEventListener('click', () => {
+            roster.removeUser(u.name);
+          });
+        }
         rosterListEl.appendChild(row);
       });
     }
@@ -1106,6 +1175,7 @@
     function setDrawerOpen(open) {
       drawerOpen = open;
       rosterDrawer.classList.toggle('open', drawerOpen);
+      if (drawerOpen) renderRosterList();
     }
     document.getElementById('btn-toggle-drawer').addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1126,6 +1196,10 @@
 
     document.getElementById('add-user-form').addEventListener('submit', (e) => {
       e.preventDefault();
+      if (!roster.isSuperUser) {
+        showToast('🔒 Only Super User can add or change floor access!', true);
+        return;
+      }
       const name = document.getElementById('add-name').value.trim();
       const level = document.getElementById('add-level').value;
       const role = document.getElementById('add-role').value.trim() || 'Member';
@@ -1133,7 +1207,37 @@
       const u = roster.addOrUpdateUser(name, level, role);
       document.getElementById('add-name').value = '';
       document.getElementById('add-role').value = '';
-      showToast(`✅ Saved ${u.name} on Floor ${u.level}`, false);
+      showToast(`👑 Saved ${u.name} on Floor ${u.level} (synced live)`, false);
+    });
+
+    document.getElementById('super-unlock-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const pinEl = document.getElementById('super-pin-input');
+      const ok = roster.verifyAndUnlockSuperUser(pinEl.value);
+      pinEl.value = '';
+      if (ok) {
+        sfx.levelUp();
+        showToast('👑 Super User unlocked! You can now change everyone\'s floor access live.', false);
+      } else {
+        sfx.denied();
+        showToast('🔒 Incorrect Super User PIN.', true);
+      }
+    });
+
+    document.getElementById('btn-lock-super').addEventListener('click', () => {
+      roster.lockSuperUser();
+      showToast('🔒 Super User mode locked.', false);
+    });
+
+    document.getElementById('change-pin-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const npEl = document.getElementById('new-pin-input');
+      if (roster.changeAdminPin(npEl.value)) {
+        npEl.value = '';
+        showToast('🔑 Super User PIN updated & synced!', false);
+      } else {
+        showToast('⚠️ PIN must be at least 4 characters.', true);
+      }
     });
 
     document.getElementById('btn-level-up-me').addEventListener('click', (e) => {
