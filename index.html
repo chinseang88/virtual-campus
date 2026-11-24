@@ -582,6 +582,7 @@
       <div id="room-name">Floor 1 • Trojan Horse Atrium</div>
       <div id="floor-landmark-badge">Unique Item: Trojan Horse (Troy)</div>
       <div id="total-players-badge">11 Roster Users</div>
+      <div id="live-room-badge" style="font-size:11px;color:#38bdf8;margin-top:2px;">Live Room: Connecting...</div>
       <div id="hud-user-badge"></div>
       <div id="hud-upgrade-note"></div>
       <div class="left-actions">
@@ -690,13 +691,17 @@
     </div>
 
     <div class="section-box">
-      <div class="section-label">4. Live Multi-User Sync (Firebase Realtime DB)</div>
+      <div class="section-label">4. Live Multi-User Room (Zero-Account Sync)</div>
+      <form id="room-form" class="inline-form">
+        <input id="room-id-input" type="text" placeholder="Room ID (e.g. pg17-chinseang88)" />
+        <button type="submit" class="mini-btn" style="background:#16a34a;color:#fff">Join</button>
+      </form>
       <form id="firebase-form" class="inline-form">
-        <input id="firebase-url-input" type="text" placeholder="https://your-project.firebaseio.com" />
-        <button type="submit" class="mini-btn" style="background:#0284c7;color:#fff">Connect</button>
+        <input id="firebase-url-input" type="text" placeholder="Optional Firebase URL (https://...firebaseio.com)" />
+        <button type="submit" class="mini-btn" style="background:#0284c7;color:#fff">Use DB</button>
       </form>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;color:#94a3b8;">
-        <span id="firebase-status">Offline (Local Mode)</span>
+        <span id="firebase-status">Connecting Live Room...</span>
         <button id="btn-copy-share-link" class="mini-btn" type="button">Copy Live Link</button>
       </div>
     </div>
@@ -707,6 +712,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
   <script src="js/textures.js"></script>
   <script src="js/building.js"></script>
   <script src="js/mesher.js"></script>

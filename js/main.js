@@ -589,10 +589,19 @@
     }
 
     // =========================================================================
-    // Live Multi-User Sync: Firebase Realtime DB REST OR local server.py
+    // Live Multi-User Sync:
+    //   1) Firebase Realtime DB (if URL set)
+    //   2) Local server.py (/api/sync, when running locally)
+    //   3) Zero-Account Public WSS Live Room (MQTT over WebSocket — works on github.io!)
     // =========================================================================
-    const DEFAULT_FIREBASE_URL = ''; // Paste your https://<project>.firebaseio.com URL here if you want it baked in
+    const DEFAULT_FIREBASE_URL = '';
     const FB_STORAGE_KEY = 'pg17_firebase_url_v1';
+    const ROOM_STORAGE_KEY = 'pg17_live_room_v1';
+    const DEFAULT_ROOM_ID = 'pg17-chinseang88';
+    const MQTT_BROKERS = [
+      'wss://broker.emqx.io:8084/mqtt',
+      'wss://broker.hivemq.com:8884/mqtt',
+    ];
 
     function normalizeFirebaseUrl(raw) {
       const s = String(raw || '').trim().replace(/\/+$/, '');
@@ -601,10 +610,21 @@
       return s;
     }
 
-    const urlParamFb = new URLSearchParams(location.search).get('fb');
+    function normalizeRoomId(raw) {
+      const clean = String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-').replace(/-+/g, '-').slice(0, 32);
+      return clean || DEFAULT_ROOM_ID;
+    }
+
+    const searchParams = new URLSearchParams(location.search);
+    const urlParamFb = searchParams.get('fb');
+    const urlParamRoom = searchParams.get('room');
     let firebaseUrl = normalizeFirebaseUrl(urlParamFb || localStorage.getItem(FB_STORAGE_KEY) || DEFAULT_FIREBASE_URL);
+    let roomId = normalizeRoomId(urlParamRoom || localStorage.getItem(ROOM_STORAGE_KEY) || DEFAULT_ROOM_ID);
     if (urlParamFb && firebaseUrl) {
       try { localStorage.setItem(FB_STORAGE_KEY, firebaseUrl); } catch (e) { /* ignore */ }
+    }
+    if (urlParamRoom) {
+      try { localStorage.setItem(ROOM_STORAGE_KEY, roomId); } catch (e) { /* ignore */ }
     }
 
     const myClientId = 'p_' + Math.random().toString(36).slice(2, 10);
@@ -612,27 +632,167 @@
     const seenFirebaseChats = new Set();
     let lastRosterSyncTs = 0;
     let isApplyingRemoteRoster = false;
-    let syncEnabled = !firebaseUrl &&
-      location.protocol !== 'file:' &&
-      !/sharepoint\.com$/i.test(location.hostname) &&
-      !/\.aspx$/i.test(location.pathname);
+    const isLocalPythonHost = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') && !/\.aspx$/i.test(location.pathname);
+    let syncEnabled = !firebaseUrl && isLocalPythonHost;
 
     const fbInputEl = document.getElementById('firebase-url-input');
     const fbStatusEl = document.getElementById('firebase-status');
+    const roomInputEl = document.getElementById('room-id-input');
+    const liveRoomBadgeEl = document.getElementById('live-room-badge');
     if (fbInputEl) fbInputEl.value = firebaseUrl;
+    if (roomInputEl) roomInputEl.value = roomId;
 
-    function updateFirebaseStatus(text, ok = false) {
-      if (!fbStatusEl) return;
-      fbStatusEl.textContent = text;
-      fbStatusEl.style.color = ok ? '#4ade80' : '#94a3b8';
+    function updateSyncStatus(text, ok = false) {
+      if (fbStatusEl) {
+        fbStatusEl.textContent = text;
+        fbStatusEl.style.color = ok ? '#4ade80' : '#94a3b8';
+      }
+      if (liveRoomBadgeEl) {
+        liveRoomBadgeEl.textContent = text;
+        liveRoomBadgeEl.style.color = ok ? '#4ade80' : '#94a3b8';
+      }
     }
-    if (firebaseUrl) updateFirebaseStatus('Connecting to Firebase...', true);
 
-    async function pushRosterToFirebase() {
-      if (!firebaseUrl || isApplyingRemoteRoster) return;
+    // Zero-Account MQTT-over-WSS Live Room Manager
+    let mqttClient = null;
+    let mqttBrokerIdx = 0;
+    let mqttConnected = false;
+    let mqttFallbackTimer = null;
+    const mqttPeers = new Map(); // id -> { id, name, level, x, y, z, yaw, ts }
+
+    function topicPrefix() {
+      return `vcampus_pg17/${roomId}`;
+    }
+
+    function disconnectMqtt() {
+      if (mqttFallbackTimer) { clearTimeout(mqttFallbackTimer); mqttFallbackTimer = null; }
+      if (mqttClient) {
+        try {
+          if (mqttConnected) {
+            mqttClient.publish(`${topicPrefix()}/pos`, JSON.stringify({ id: myClientId, bye: true }));
+          }
+          mqttClient.end(true);
+        } catch (e) { /* ignore */ }
+        mqttClient = null;
+      }
+      mqttConnected = false;
+      mqttPeers.clear();
+    }
+
+    function connectMqttRoom() {
+      disconnectMqtt();
+      if (firebaseUrl || syncEnabled) return;
+      if (typeof global.mqtt === 'undefined') {
+        updateSyncStatus('Live Room unavailable offline', false);
+        return;
+      }
+      const brokerUrl = MQTT_BROKERS[mqttBrokerIdx % MQTT_BROKERS.length];
+      updateSyncStatus(`Connecting Room "${roomId}"...`, false);
+
       try {
-        const ts = Date.now();
-        lastRosterSyncTs = ts;
+        const client = global.mqtt.connect(brokerUrl, {
+          clientId: `vc_${myClientId}_${Math.floor(Math.random() * 999)}`,
+          clean: true,
+          connectTimeout: 6000,
+          reconnectPeriod: 4000,
+        });
+        mqttClient = client;
+
+        mqttFallbackTimer = setTimeout(() => {
+          if (!mqttConnected && mqttClient === client) {
+            mqttBrokerIdx = (mqttBrokerIdx + 1) % MQTT_BROKERS.length;
+            connectMqttRoom();
+          }
+        }, 6500);
+
+        client.on('connect', () => {
+          if (mqttClient !== client) return;
+          mqttConnected = true;
+          if (mqttFallbackTimer) { clearTimeout(mqttFallbackTimer); mqttFallbackTimer = null; }
+          const pfx = topicPrefix();
+          client.subscribe([`${pfx}/pos`, `${pfx}/chat`, `${pfx}/roster`]);
+          updateSyncStatus(`🟢 Live Room: ${roomId}`, true);
+          publishMqttPos();
+        });
+
+        client.on('message', (topic, payloadBuf) => {
+          try {
+            const msg = JSON.parse(payloadBuf.toString());
+            const pfx = topicPrefix();
+            if (topic === `${pfx}/pos`) {
+              if (!msg || !msg.id || msg.id === myClientId) return;
+              if (msg.bye) {
+                mqttPeers.delete(msg.id);
+              } else {
+                mqttPeers.set(msg.id, { ...msg, ts: Date.now() });
+              }
+            } else if (topic === `${pfx}/chat`) {
+              if (!msg || msg.id === myClientId || !msg.text) return;
+              const me = roster.getActiveUser();
+              pushChat(msg.sender, msg.text, false, true);
+              if (msg.target && msg.target.toLowerCase() === me.name.toLowerCase()) {
+                openPropDialog(`💬 Message from ${msg.sender}`, msg.text);
+              }
+            } else if (topic === `${pfx}/roster`) {
+              if (msg && Array.isArray(msg.users) && msg.users.length > 0 && (msg.updatedAt || 0) > lastRosterSyncTs) {
+                lastRosterSyncTs = msg.updatedAt;
+                isApplyingRemoteRoster = true;
+                roster.users = msg.users;
+                origRosterSave();
+                isApplyingRemoteRoster = false;
+              }
+            }
+          } catch (e) { /* ignore malformed packet */ }
+        });
+
+        client.on('error', () => {
+          if (mqttClient === client && !mqttConnected) {
+            updateSyncStatus(`Retrying Room "${roomId}"...`, false);
+          }
+        });
+      } catch (e) {
+        updateSyncStatus('Live Room error', false);
+      }
+    }
+
+    function publishMqttPos() {
+      if (!mqttClient || !mqttConnected) return;
+      const me = roster.getActiveUser();
+      mqttClient.publish(`${topicPrefix()}/pos`, JSON.stringify({
+        id: myClientId,
+        name: me.name,
+        level: me.level,
+        x: Number(playerPos.x.toFixed(2)),
+        y: Number(playerPos.y.toFixed(2)),
+        z: Number(playerPos.z.toFixed(2)),
+        yaw: Number((yaw + Math.PI).toFixed(2)),
+      }));
+    }
+
+    window.addEventListener('beforeunload', () => {
+      if (mqttClient && mqttConnected) {
+        try {
+          mqttClient.publish(`${topicPrefix()}/pos`, JSON.stringify({ id: myClientId, bye: true }));
+        } catch (e) { /* ignore */ }
+      }
+    });
+
+    async function pushRosterShared() {
+      if (isApplyingRemoteRoster) return;
+      const ts = Date.now();
+      lastRosterSyncTs = ts;
+      if (mqttClient && mqttConnected) {
+        try {
+          mqttClient.publish(
+            `${topicPrefix()}/roster`,
+            JSON.stringify({ updatedAt: ts, users: roster.users }),
+            { retain: true }
+          );
+        } catch (e) { /* ignore */ }
+        return;
+      }
+      if (!firebaseUrl) return;
+      try {
         await fetch(`${firebaseUrl}/roster.json`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -642,6 +802,18 @@
     }
 
     async function sendLiveChat(sender, text, target = '') {
+      if (mqttClient && mqttConnected) {
+        try {
+          mqttClient.publish(`${topicPrefix()}/chat`, JSON.stringify({
+            id: myClientId,
+            sender,
+            text,
+            target,
+            ts: Date.now(),
+          }));
+        } catch (e) { /* ignore */ }
+        return;
+      }
       if (firebaseUrl) {
         try {
           await fetch(`${firebaseUrl}/chats.json`, {
@@ -663,14 +835,38 @@
       } catch (e) { syncEnabled = false; }
     }
 
-    // Hook roster changes to sync shared Excel list to Firebase
+    // Hook roster changes to sync shared Excel list
     const origRosterSave = roster.save.bind(roster);
     roster.save = function () {
       origRosterSave();
-      pushRosterToFirebase();
+      pushRosterShared();
     };
 
-    // Firebase Realtime Sync Loop (380ms)
+    // Start Zero-Account MQTT Live Room automatically on static hosts (github.io, sharepoint, etc.)
+    if (!firebaseUrl && !syncEnabled) {
+      connectMqttRoom();
+    } else if (firebaseUrl) {
+      updateSyncStatus('Connecting to Firebase...', true);
+    }
+
+    // MQTT Broadcast & Stale-Peer Pruning Loop (280ms)
+    setInterval(() => {
+      if (!mqttClient || !mqttConnected) return;
+      publishMqttPos();
+      const nowTs = Date.now();
+      const active = [];
+      for (const [id, p] of mqttPeers.entries()) {
+        if (nowTs - (p.ts || 0) > 8500) {
+          mqttPeers.delete(id);
+        } else {
+          active.push(p);
+        }
+      }
+      crowd.syncRemotePlayers(active, myClientId);
+      updateSyncStatus(`🟢 Live Room: ${roomId} (${active.length + 1} online)`, true);
+    }, 280);
+
+    // Firebase Realtime Sync Loop (380ms, only when Firebase URL configured)
     setInterval(async () => {
       if (!firebaseUrl) return;
       try {
@@ -697,14 +893,13 @@
           fetch(`${firebaseUrl}/roster.json`),
         ]);
         if (!pRes.ok) {
-          updateFirebaseStatus(`Firebase error (${pRes.status}) — check Rules`, false);
+          updateSyncStatus(`Firebase error (${pRes.status}) — check Rules`, false);
           return;
         }
-        updateFirebaseStatus('Live Connected (Firebase)', true);
-
         const pData = (await pRes.json()) || {};
         const active = Object.values(pData).filter((p) => p && nowTs - (p.ts || 0) < 9000);
         crowd.syncRemotePlayers(active, myClientId);
+        updateSyncStatus(`🟢 Firebase Live (${active.length} online)`, true);
 
         const cData = cRes.ok ? ((await cRes.json()) || {}) : {};
         const myTag = `${me.name} @F${world.getFloorAtY(playerPos.y).level}`;
@@ -731,11 +926,11 @@
           }
         }
       } catch (e) {
-        updateFirebaseStatus('Firebase unreachable', false);
+        updateSyncStatus('Firebase unreachable', false);
       }
     }, 380);
 
-    // Local Python server.py Sync Loop (only when no Firebase URL and running on server.py)
+    // Local Python server.py Sync Loop (only when running on localhost/127.0.0.1 server.py)
     const syncTimer = setInterval(async () => {
       if (firebaseUrl || !syncEnabled) {
         if (!syncEnabled) clearInterval(syncTimer);
@@ -760,11 +955,13 @@
         if (!res.ok) {
           syncEnabled = false;
           clearInterval(syncTimer);
+          connectMqttRoom();
           return;
         }
         const data = await res.json();
         if (Array.isArray(data.players)) {
           crowd.syncRemotePlayers(data.players, myClientId);
+          updateSyncStatus(`🟢 Local Server (${data.players.length} online)`, true);
         }
         if (Array.isArray(data.chats)) {
           for (const c of data.chats) {
@@ -781,6 +978,7 @@
       } catch (e) {
         syncEnabled = false;
         clearInterval(syncTimer);
+        connectMqttRoom();
       }
     }, 300);
 
@@ -975,6 +1173,20 @@
       showToast('🔄 Reset to default Floors 1–6 roster', false);
     });
 
+    const roomForm = document.getElementById('room-form');
+    if (roomForm) {
+      roomForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        roomId = normalizeRoomId(roomInputEl.value);
+        roomInputEl.value = roomId;
+        try { localStorage.setItem(ROOM_STORAGE_KEY, roomId); } catch (err) { /* ignore */ }
+        firebaseUrl = '';
+        syncEnabled = false;
+        connectMqttRoom();
+        showToast(`🔗 Joined Live Room "${roomId}"!`, false);
+      });
+    }
+
     const fbForm = document.getElementById('firebase-form');
     if (fbForm) {
       fbForm.addEventListener('submit', (e) => {
@@ -983,14 +1195,15 @@
         if (!clean) {
           firebaseUrl = '';
           try { localStorage.removeItem(FB_STORAGE_KEY); } catch (err) { /* ignore */ }
-          updateFirebaseStatus('Offline (Local Mode)', false);
-          showToast('Disconnected Firebase Live Sync.', true);
+          connectMqttRoom();
+          showToast('Switched back to Zero-Account Live Room.', false);
           return;
         }
+        disconnectMqtt();
         firebaseUrl = clean;
         fbInputEl.value = clean;
         try { localStorage.setItem(FB_STORAGE_KEY, clean); } catch (err) { /* ignore */ }
-        updateFirebaseStatus('Connecting to Firebase...', true);
+        updateSyncStatus('Connecting to Firebase...', true);
         showToast('🔗 Connected Firebase URL! Live multi-user sync active.', false);
       });
     }
@@ -998,7 +1211,9 @@
     if (copyLinkBtn) {
       copyLinkBtn.addEventListener('click', async () => {
         const base = location.origin + location.pathname;
-        const shareUrl = firebaseUrl ? `${base}?fb=${encodeURIComponent(firebaseUrl)}` : base;
+        const shareUrl = firebaseUrl
+          ? `${base}?fb=${encodeURIComponent(firebaseUrl)}`
+          : `${base}?room=${encodeURIComponent(roomId)}`;
         try {
           await navigator.clipboard.writeText(shareUrl);
           showToast('📋 Copied live invite link!', false);
