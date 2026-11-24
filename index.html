@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Virtual Campus — PG17 Multi-Level Interactive World</title>
+  <style>
+    * { box-sizing: border-box; user-select: none; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0f172a;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #f8fafc;
+    }
+    #game-container { position: fixed; inset: 0; cursor: crosshair; }
+    canvas { display: block; }
+
+    /* Subtle Horizon Dot (only shown in 1st Person Surround) */
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      border: 2px solid rgba(255, 255, 255, 0.75);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 10;
+      display: none;
+      box-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
+    }
+
+    /* Left Sidebar Column (prevents overlap between HUD & Post Board) */
+    #left-column {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      bottom: 14px;
+      width: 325px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+
+    /* Top-Left Info Panel */
+    #hud-top-left {
+      background: rgba(15, 23, 42, 0.86);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      padding: 12px 14px;
+      width: 100%;
+      pointer-events: auto;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    }
+    .hud-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      letter-spacing: 0.4px;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 8px #4ade80;
+      display: inline-block;
+    }
+    #room-name {
+      margin-top: 5px;
+      font-size: 13.5px;
+      color: #f8fafc;
+      font-weight: 600;
+    }
+    #floor-landmark-badge {
+      margin-top: 3px;
+      font-size: 11.5px;
+      color: #fde047;
+      font-weight: 600;
+    }
+    #total-players-badge {
+      margin-top: 2px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+    #hud-user-badge {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      font-size: 12.5px;
+      color: #e2e8f0;
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .badge-pill {
+      font-size: 10.5px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 999px;
+    }
+    #hud-upgrade-note {
+      margin-top: 4px;
+      font-size: 11px;
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+    .left-actions {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* Top-Right Controls & Elevator */
+    #hud-top-right {
+      position: fixed;
+      top: 14px;
+      right: 14px;
+      background: rgba(15, 23, 42, 0.85);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 12px;
+      padding: 10px 12px;
+      z-index: 20;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 262px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    }
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .hud-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      text-align: center;
+    }
+    .hud-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.22); }
+    .hud-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .hud-btn.wide { grid-column: span 2; }
+    .hud-btn.primary {
+      background: rgba(56, 189, 248, 0.22);
+      border-color: rgba(56, 189, 248, 0.55);
+      color: #bae6fd;
+    }
+    .hud-btn.upgrade {
+      background: rgba(250, 204, 21, 0.2);
+      border-color: rgba(250, 204, 21, 0.55);
+      color: #fef08a;
+    }
+    .comfort-tip {
+      font-size: 10.5px;
+      color: #94a3b8;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      padding: 5px 7px;
+      line-height: 1.35;
+    }
+
+    .elevator-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: #94a3b8;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    #floor-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .floor-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      width: 100%;
+      padding: 5px 8px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      font-size: 11.5px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.14s;
+    }
+    .floor-btn.unlocked:hover { background: rgba(56, 189, 248, 0.2); border-color: rgba(56, 189, 248, 0.5); }
+    .floor-btn.current { background: rgba(74, 222, 128, 0.22); border-color: #4ade80; color: #fff; }
+    .floor-btn.locked { opacity: 0.55; background: rgba(127, 29, 29, 0.25); border-color: rgba(248, 113, 113, 0.35); }
+    .fl-code { font-weight: 800; min-width: 22px; color: #fde047; }
+    .floor-btn.locked .fl-code { color: #fca5a5; }
+    .fl-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fl-icon { font-size: 11px; }
+
+    /* Toast Banner */
+    .toast {
+      position: fixed;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      padding: 10px 18px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      z-index: 60;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s, transform 0.2s;
+      box-shadow: 0 10px 26px rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(8px);
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.error { background: rgba(185, 28, 28, 0.92); border: 1px solid #fca5a5; color: #fff; }
+    .toast.success { background: rgba(15, 118, 110, 0.92); border: 1px solid #5eead4; color: #fff; }
+
+    /* Interactive Item / NPC Prompt Pill */
+    #item-prompt {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 2px solid #fde047;
+      color: #fef08a;
+      padding: 7px 16px;
+      border-radius: 999px;
+      font-size: 12.5px;
+      font-weight: 700;
+      z-index: 25;
+      display: none;
+      pointer-events: auto;
+      cursor: pointer;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    }
+
+    /* Double-Ruled RPG Dialogue Box (Classic + Modern Fusion) */
+    #pkmn-dialog {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(640px, calc(100vw - 32px));
+      background: #fffdf7;
+      color: #0f172a;
+      border: 4px solid #0f172a;
+      box-shadow: inset 0 0 0 3px #ffffff, inset 0 0 0 6px #334155, 0 18px 42px rgba(0, 0, 0, 0.55);
+      border-radius: 12px;
+      padding: 16px 20px 14px;
+      z-index: 45;
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+    }
+    #pkmn-dialog.open { display: flex; }
+    .pkmn-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .pkmn-speaker {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #1e293b;
+      color: #fde047;
+      font-weight: 800;
+      font-size: 12.5px;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .pkmn-close {
+      background: #e2e8f0;
+      border: 1px solid #94a3b8;
+      color: #0f172a;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      cursor: pointer;
+    }
+    .pkmn-text {
+      font-size: 14.5px;
+      line-height: 1.45;
+      font-weight: 600;
+      color: #1e293b;
+      min-height: 40px;
+    }
+    .pkmn-choices {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .pkmn-choice-btn {
+      background: #eff6ff;
+      border: 2px solid #3b82f6;
+      color: #1d4ed8;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .pkmn-choice-btn:hover { background: #dbeafe; }
+    .pkmn-reply-form {
+      display: flex;
+      gap: 6px;
+      flex: 1;
+      min-width: 220px;
+    }
+    .pkmn-reply-form input {
+      flex: 1;
+      user-select: text;
+      border: 2px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 5px 10px;
+      font-size: 12.5px;
+      outline: none;
+      color: #0f172a;
+      background: #fff;
+    }
+    .pkmn-reply-form input:focus { border-color: #2563eb; }
+
+    /* Optional On-Screen Pokemon D-Pad (Bottom-Right) */
+    #pkmn-dpad {
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      z-index: 20;
+      display: grid;
+      grid-template-columns: 36px 36px 36px;
+      grid-template-rows: 36px 36px 36px;
+      gap: 3px;
+      background: rgba(15, 23, 42, 0.72);
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      backdrop-filter: blur(8px);
+    }
+    .dpad-btn {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #f8fafc;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .dpad-btn:active, .dpad-btn:hover { background: rgba(56, 189, 248, 0.35); }
+    .dpad-center { background: rgba(250, 204, 21, 0.25); border-color: rgba(250, 204, 21, 0.6); color: #fde047; font-size: 11px; }
+
+    /* Excel Roster & Login Drawer */
+    #roster-drawer {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      bottom: 14px;
+      width: 375px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(14px);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      border-radius: 14px;
+      z-index: 50;
+      display: none;
+      flex-direction: column;
+      padding: 14px;
+      gap: 10px;
+      box-shadow: 0 22px 50px rgba(0, 0, 0, 0.65);
+    }
+    #roster-drawer.open { display: flex; }
+    #roster-drawer input, #roster-drawer select {
+      user-select: text;
+      background: rgba(30, 41, 59, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 6px;
+      color: #f8fafc;
+      padding: 6px 8px;
+      font-size: 12px;
+      outline: none;
+    }
+    #roster-drawer input:focus, #roster-drawer select:focus { border-color: #38bdf8; }
+    .drawer-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+      padding-bottom: 8px;
+    }
+    .drawer-header h2 { margin: 0; font-size: 15px; color: #38bdf8; }
+    .section-box {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .section-label { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+    .inline-form { display: flex; gap: 6px; }
+    .inline-form input[type="text"] { flex: 1; min-width: 0; }
+    .excel-btn-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; }
+    #roster-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 4px;
+    }
+    .roster-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 8px;
+      padding: 7px 9px;
+    }
+    .roster-row.active-me {
+      border-color: #4ade80;
+      background: rgba(74, 222, 128, 0.12);
+    }
+    .roster-info { display: flex; flex-direction: column; min-width: 0; }
+    .roster-name { font-size: 12.5px; font-weight: 700; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .roster-meta { font-size: 11px; color: #94a3b8; }
+    .roster-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .mini-btn {
+      background: rgba(255, 255, 255, 0.1);
+      color: #f1f5f9;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 5px;
+      padding: 4px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .mini-btn:hover:not(:disabled) { background: rgba(56, 189, 248, 0.25); }
+    .mini-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .mini-btn.up-btn { color: #fde047; border-color: rgba(250, 204, 21, 0.4); }
+    .mini-btn.del-btn { color: #fca5a5; }
+
+    /* Left-Side User Post & Chat Board */
+    #chat-box {
+      flex: 1;
+      min-height: 0;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+    }
+    .post-board-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #94a3b8;
+    }
+    #chat-messages {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding-right: 4px;
+    }
+    .chat-row {
+      background: rgba(30, 41, 59, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 6px 9px;
+      border-radius: 8px;
+      font-size: 12px;
+      line-height: 1.38;
+      color: #f1f5f9;
+      word-break: break-word;
+    }
+    .chat-name { color: #7dd3fc; font-weight: 700; }
+    .chat-floor-tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      background: rgba(56, 189, 248, 0.2);
+      color: #bae6fd;
+      padding: 0 5px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+    .chat-system { color: #fde047; font-style: italic; background: rgba(250, 204, 21, 0.08); }
+    #post-form {
+      display: flex;
+      gap: 6px;
+      pointer-events: auto;
+    }
+    #chat-input {
+      flex: 1;
+      min-width: 0;
+      user-select: text;
+      background: rgba(30, 41, 59, 0.95);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 7px;
+      color: #fff;
+      padding: 6px 9px;
+      font-size: 12px;
+      outline: none;
+    }
+    #chat-input:focus { border-color: #38bdf8; }
+    #btn-post-msg {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    #btn-post-msg:hover { background: #0369a1; }
+
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: #0f172a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading-overlay">Building PG17 Floors 1–6 & Spawning Unique Landmarks...</div>
+  <div id="game-container"></div>
+  <div id="crosshair"></div>
+  <div id="access-toast" class="toast"></div>
+  <div id="item-prompt"></div>
+
+  <div id="left-column">
+    <div id="hud-top-left">
+      <div class="hud-title"><span class="live-dot"></span>PG17 CAMPUS (FLOORS 1–6)</div>
+      <div id="room-name">Floor 1 • Trojan Horse Atrium</div>
+      <div id="floor-landmark-badge">Unique Item: Trojan Horse (Troy)</div>
+      <div id="total-players-badge">11 Roster Users</div>
+      <div id="hud-user-badge"></div>
+      <div id="hud-upgrade-note"></div>
+      <div class="left-actions">
+        <button id="btn-toggle-drawer" class="hud-btn primary">Excel Users / Login [U]</button>
+        <button id="btn-level-up-me" class="hud-btn upgrade">Level Up Me</button>
+      </div>
+    </div>
+
+    <div id="chat-box">
+      <div class="post-board-header">
+        <span>PG17 Community Wall / Posts</span>
+        <button id="btn-clear-posts" class="mini-btn" type="button">Clear</button>
+      </div>
+      <div id="chat-messages"></div>
+      <form id="post-form">
+        <input id="chat-input" type="text" placeholder="Post an update or message..." maxlength="140" />
+        <button id="btn-post-msg" type="submit">Post</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="hud-top-right">
+    <div class="btn-row">
+      <button id="btn-camera" class="hud-btn wide primary">View: Campus 3/4 [C]</button>
+      <button id="btn-slice" class="hud-btn">Slice Floor: ON [R]</button>
+      <button id="btn-time" class="hud-btn">Day [T]</button>
+      <button id="btn-interact" class="hud-btn wide upgrade">Talk / Interact [E]</button>
+    </div>
+    <div class="comfort-tip" id="comfort-tip">
+      <strong>Campus 3/4:</strong> WASD / Arrows or click floor to walk. Click any person/item or press [E] to talk &amp; interact!
+    </div>
+    <div class="elevator-title">PG17 Elevator (Floors 1–6)</div>
+    <div id="floor-buttons"></div>
+  </div>
+
+  <!-- Classic Pokemon-Style Dialogue & Talk Box -->
+  <div id="pkmn-dialog">
+    <div class="pkmn-header">
+      <span class="pkmn-speaker" id="pkmn-speaker">Speaker</span>
+      <button class="pkmn-close" id="pkmn-close" type="button">Close [Esc]</button>
+    </div>
+    <div class="pkmn-text" id="pkmn-text"></div>
+    <div class="pkmn-choices" id="pkmn-choices">
+      <button class="pkmn-choice-btn" id="pkmn-opt-hi" type="button">Say Hi</button>
+      <button class="pkmn-choice-btn" id="pkmn-opt-floor" type="button">Ask about Floor</button>
+      <button class="pkmn-choice-btn" id="pkmn-opt-follow" type="button">Follow Me</button>
+      <form class="pkmn-reply-form" id="pkmn-reply-form">
+        <input id="pkmn-reply-input" type="text" placeholder="Type message to talk..." maxlength="120" />
+        <button class="pkmn-choice-btn" type="submit">Send</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Optional On-Screen Pokemon D-Pad -->
+  <div id="pkmn-dpad" title="Pokemon Walk D-Pad">
+    <div></div>
+    <button class="dpad-btn" data-dir="up" type="button">▲</button>
+    <div></div>
+    <button class="dpad-btn" data-dir="left" type="button">◀</button>
+    <button class="dpad-btn dpad-center" data-dir="act" type="button" title="Talk / Interact [E]">ACT</button>
+    <button class="dpad-btn" data-dir="right" type="button">▶</button>
+    <div></div>
+    <button class="dpad-btn" data-dir="down" type="button">▼</button>
+    <div></div>
+  </div>
+
+  <div id="roster-drawer">
+    <div class="drawer-header">
+      <h2>PG17 Excel Access & Login</h2>
+      <button id="btn-close-drawer" class="mini-btn">Close</button>
+    </div>
+
+    <div class="section-box">
+      <div class="section-label">1. Login by Name</div>
+      <form id="login-form" class="inline-form">
+        <input id="login-name-input" type="text" placeholder="Enter user name (e.g. Mei, Priya, Mika)..." />
+        <button type="submit" class="mini-btn" style="background:#0284c7;color:#fff">Login</button>
+      </form>
+    </div>
+
+    <div class="section-box">
+      <div class="section-label">2. Excel / CSV Roster Control (Name, Floor)</div>
+      <div class="excel-btn-row">
+        <button id="btn-upload-excel" class="hud-btn primary" type="button">Upload .xlsx / .csv</button>
+        <button id="btn-download-excel" class="hud-btn" type="button">Export .xlsx</button>
+        <button id="btn-reset-roster" class="hud-btn" type="button">Reset</button>
+      </div>
+      <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv,.tsv" style="display:none" />
+    </div>
+
+    <div class="section-box">
+      <div class="section-label">3. Add / Update User Floor (1–6)</div>
+      <form id="add-user-form" class="inline-form" style="flex-wrap:wrap">
+        <input id="add-name" type="text" placeholder="Name" style="flex:1.2" required />
+        <select id="add-level" title="Assigned Floor (1-6)">
+          <option value="1">Floor 1 — Lobby + Troy Horse</option>
+          <option value="2">Floor 2 — Sports + Kick Ball</option>
+          <option value="3">Floor 3 — Forest + Bear Bear</option>
+          <option value="4">Floor 4 — Ocean + Dolphin</option>
+          <option value="5">Floor 5 — Industrial + Michelangelo</option>
+          <option value="6">Floor 6 — Map + World Globe</option>
+        </select>
+        <input id="add-role" type="text" placeholder="Role (optional)" style="flex:1" />
+        <button type="submit" class="mini-btn" style="background:#16a34a;color:#fff">Add</button>
+      </form>
+    </div>
+
+    <div class="section-label" id="roster-summary">Roster Users</div>
+    <div id="roster-list"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="js/textures.js"></script>
+  <script src="js/building.js"></script>
+  <script src="js/mesher.js"></script>
+  <script src="js/players.js"></script>
+  <script src="js/items.js"></script>
+  <script src="js/roster.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

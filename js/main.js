@@ -1,0 +1,1312 @@
+// PG17 Voxel Tower Engine: Pokemon-Style 3/4 Navigation, NPC/User Dialogue Box,
+// Unique Interactive Items, Floor-Access Gating (Floors 1-6) & Live Multi-User Sync
+(function (global) {
+  const { BLOCKS, createAtlas } = global.VoxelTextures;
+  const { PG17_LEVELS, VoxelWorld } = global;
+  const { buildWorldMeshes } = global.VoxelMesher;
+  const { createAvatarMesh, moveWithCollision, RosterCrowdManager } = global.VoxelPlayers;
+  const { UniqueItemManager } = global.PG17Items;
+  const { RosterManager, nextUpgradeLevel } = global.PG17Roster;
+
+  const CAMERA_MODES = ['Campus 3/4', 'Top-Down Map', '1st Person Surround'];
+
+  class SoundFX {
+    constructor() { this.ctx = null; this.stepTimer = 0; }
+    ensure() {
+      if (!this.ctx && (window.AudioContext || window.webkitAudioContext)) {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    }
+    playTone(freq, dur, vol = 0.08, type = 'triangle') {
+      if (!this.ctx) return;
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq * 0.65), now + dur);
+      gain.gain.setValueAtTime(vol, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(now);
+      osc.stop(now + dur);
+    }
+    step() { this.playTone(150 + Math.random() * 35, 0.05, 0.03, 'sine'); }
+    blip() { this.playTone(680, 0.04, 0.04, 'square'); }
+    denied() {
+      this.ensure();
+      this.playTone(130, 0.14, 0.11, 'sawtooth');
+      setTimeout(() => this.playTone(105, 0.18, 0.11, 'sawtooth'), 110);
+    }
+    levelUp() {
+      this.ensure();
+      [440, 554.37, 659.25, 880].forEach((f, i) => {
+        setTimeout(() => this.playTone(f, 0.22, 0.09, 'triangle'), i * 85);
+      });
+    }
+    elevator() {
+      this.ensure();
+      this.playTone(523.25, 0.18, 0.07, 'sine');
+      setTimeout(() => this.playTone(659.25, 0.25, 0.07, 'sine'), 140);
+    }
+  }
+
+  function detectZone(world, x, y, z) {
+    if (x < 4 || x > 63 || z < 6 || z > 34) return 'PG17 Campus Arrival Plaza (Floor 1)';
+    const lvl = world.getFloorAtY(y);
+    const wing = x <= 25 ? 'L1' : (x >= 42 ? 'L2' : 'LL');
+
+    if (lvl.level === 1) {
+      if (wing === 'L1') return 'Floor 1 • Trojan Horse Atrium (L1)';
+      if (wing === 'L2') return 'Floor 1 • Main Reception (ML)';
+      return 'Floor 1 • Main Lift Lobby (LL)';
+    }
+    if (lvl.level === 2) {
+      if (wing === 'L1') return x >= 18 ? 'Floor 2 • Sports Running Track (L1)' : 'Floor 2 • Blue Court & Yellow Pantry (L1)';
+      if (wing === 'L2') return 'Floor 2 • Indoor Turf Pitch & Ball (L2)';
+      return 'Floor 2 • Sports Lift Lobby (LL)';
+    }
+    if (lvl.level === 3) {
+      if (wing === 'L1') return 'Floor 3 • Forest Lounge & Bear Bear (L1)';
+      if (wing === 'L2') return z <= 20 ? 'Floor 3 • Fitness Yoga Studio (L2)' : 'Floor 3 • Spin & Turf Studio (L2)';
+      return 'Floor 3 • Forest Lift Lobby (LL)';
+    }
+    if (lvl.level === 4) {
+      if (wing === 'L1') return z <= 20 ? 'Floor 4 • Ocean Dolphin Lounge (L1)' : 'Floor 4 • Kelp Wave Bar (L1)';
+      if (wing === 'L2') return z <= 15 ? 'Floor 4 • Locker & Shower Wing (L2)' : 'Floor 4 • Ping-Pong Relax Corner (L2)';
+      return 'Floor 4 • Ocean Lift Lobby (LL)';
+    }
+    if (lvl.level === 5) {
+      if (wing === 'L1') return 'Floor 5 • Michelangelo Gallery & Red Booths (L1)';
+      if (wing === 'L2') return 'Floor 5 • Main Fitness Gym (L2)';
+      return 'Floor 5 • Industrial Lift Lobby (LL)';
+    }
+    if (lvl.level === 6) {
+      if (wing === 'L1') return 'Floor 6 • City Map Sky Lounge (L1)';
+      if (wing === 'L2') return 'Floor 6 • Terrain Map Executive Lounge (L2)';
+      return 'Floor 6 • VIP Sky Atrium & World Globe (LL)';
+    }
+    return `Floor ${lvl.level} • ${lvl.shortName}`;
+  }
+
+  function initGame() {
+    if (typeof THREE === 'undefined') {
+      document.getElementById('loading-overlay').innerHTML =
+        '<div style="color:#ff8080;text-align:center;padding:24px;"><h2>Three.js failed to load</h2><p>Please check your internet connection and refresh.</p></div>';
+      return;
+    }
+
+    const container = document.getElementById('game-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x93c5fd);
+    scene.fog = new THREE.Fog(0x93c5fd, 75, 175);
+
+    const camera = new THREE.PerspectiveCamera(56, window.innerWidth / window.innerHeight, 0.1, 260);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.appendChild(renderer.domElement);
+
+    const hemiLight = new THREE.HemisphereLight(0xfffbeb, 0x475569, 0.94);
+    scene.add(hemiLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff7ed, 0.85);
+    sunLight.position.set(60, 82, 56);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 4096;
+    sunLight.shadow.mapSize.height = 4096;
+    sunLight.shadow.camera.near = 10;
+    sunLight.shadow.camera.far = 190;
+    sunLight.shadow.camera.left = -52;
+    sunLight.shadow.camera.right = 52;
+    sunLight.shadow.camera.top = 52;
+    sunLight.shadow.camera.bottom = -52;
+    sunLight.shadow.bias = -0.0005;
+    sunLight.target.position.set(34, 14, 20);
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    const pointLights = [];
+    PG17_LEVELS.forEach((lvl) => {
+      [15, 34, 52].forEach((lx) => {
+        const pl = new THREE.PointLight(0xfff1d6, 0.38, 28, 1.3);
+        pl.position.set(lx, lvl.standY + 3.6, 20);
+        scene.add(pl);
+        pointLights.push(pl);
+      });
+    });
+
+    // World & Meshes
+    const atlasTex = createAtlas();
+    atlasTex.anisotropy = Math.min(16, renderer.capabilities.getMaxAnisotropy());
+    const world = new VoxelWorld();
+    let cameraMode = 0; // 0: Pokemon 3/4 (default), 1: Top-Down Map, 2: 1st Person Surround
+    let sliceFloors = true;
+    let viewedFloorObj = PG17_LEVELS[0];
+    let worldMeshGroup = null;
+
+    function getActiveSliceMaxY() {
+      if (cameraMode !== 2 && sliceFloors) {
+        return viewedFloorObj.floorY + 4;
+      }
+      return null;
+    }
+
+    function rebuildWorldMesh() {
+      if (worldMeshGroup) {
+        scene.remove(worldMeshGroup);
+        worldMeshGroup.traverse((obj) => {
+          if (obj.geometry) obj.geometry.dispose();
+          if (obj.material) obj.material.dispose();
+        });
+      }
+      worldMeshGroup = buildWorldMeshes(world, atlasTex, getActiveSliceMaxY());
+      scene.add(worldMeshGroup);
+    }
+
+    // Cursor & Walk-Target Rings
+    const cursorRingGeo = new THREE.RingGeometry(0.30, 0.46, 24);
+    cursorRingGeo.rotateX(-Math.PI / 2);
+    const cursorRingMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85, side: THREE.DoubleSide });
+    const cursorRing = new THREE.Mesh(cursorRingGeo, cursorRingMat);
+    cursorRing.visible = false;
+    scene.add(cursorRing);
+
+    const targetRingGeo = new THREE.RingGeometry(0.24, 0.44, 24);
+    targetRingGeo.rotateX(-Math.PI / 2);
+    const targetRingMat = new THREE.MeshBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const walkTargetRing = new THREE.Mesh(targetRingGeo, targetRingMat);
+    walkTargetRing.visible = false;
+    scene.add(walkTargetRing);
+
+    // Particles
+    const particles = [];
+    const partGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+    function spawnParticles(x, y, z, colorHex, count = 12) {
+      const mat = new THREE.MeshBasicMaterial({ color: colorHex || '#fde047' });
+      for (let i = 0; i < count; i++) {
+        const m = new THREE.Mesh(partGeo, mat);
+        m.position.set(x, y + 0.6, z);
+        scene.add(m);
+        particles.push({
+          mesh: m,
+          vel: new THREE.Vector3((Math.random() - 0.5) * 5, 2.5 + Math.random() * 3.5, (Math.random() - 0.5) * 5),
+          life: 0.65,
+        });
+      }
+    }
+
+    // User Post Board & Toast Helpers
+    const POSTS_STORAGE_KEY = 'pg17_wall_posts_v1';
+    const chatMessagesEl = document.getElementById('chat-messages');
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+    function savePost(sender, text, isSystem) {
+      if (isSystem) return;
+      try {
+        const list = JSON.parse(localStorage.getItem(POSTS_STORAGE_KEY) || '[]');
+        list.push({ sender, text });
+        if (list.length > 40) list.splice(0, list.length - 40);
+        localStorage.setItem(POSTS_STORAGE_KEY, JSON.stringify(list));
+      } catch (e) { /* ignore */ }
+    }
+    function pushChat(sender, text, isSystem = false, skipSave = false) {
+      const row = document.createElement('div');
+      row.className = 'chat-row' + (isSystem ? ' chat-system' : '');
+      row.innerHTML = isSystem
+        ? `<span>${escapeHtml(text)}</span>`
+        : `<span class="chat-name">&lt;${escapeHtml(sender)}&gt;</span> <span>${escapeHtml(text)}</span>`;
+      chatMessagesEl.appendChild(row);
+      while (chatMessagesEl.children.length > 40) chatMessagesEl.removeChild(chatMessagesEl.firstChild);
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      if (!skipSave) savePost(sender, text, isSystem);
+    }
+    try {
+      const savedPosts = JSON.parse(localStorage.getItem(POSTS_STORAGE_KEY) || '[]');
+      savedPosts.forEach((p) => pushChat(p.sender, p.text, false, true));
+    } catch (e) { /* ignore */ }
+
+    const toastEl = document.getElementById('access-toast');
+    let toastTimeout = null;
+    function showToast(msg, isError = true) {
+      toastEl.textContent = msg;
+      toastEl.className = isError ? 'toast error show' : 'toast success show';
+      if (toastTimeout) clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => { toastEl.classList.remove('show'); }, 2900);
+    }
+
+    // Unique Items + Intel Floor Logos + Crowd + Roster
+    const itemManager = new UniqueItemManager(scene, PG17_LEVELS);
+    const crowd = new RosterCrowdManager(scene, world, (sender, text) => pushChat(sender, text));
+    const sfx = new SoundFX();
+
+    // Local Player State
+    const playerPos = new THREE.Vector3(28.0, 2.0, 26.0);
+    const playerVel = new THREE.Vector3(0, 0, 0);
+    let yaw = 0;       // Facing direction (0 = North -Z)
+    let camYaw = 0;    // Gentle camera orbit (0 = North -Z)
+    let onGround = true;
+    let isNight = false;
+    let drawerOpen = false;
+    let lastDeniedAt = 0;
+    let walkTarget = null;
+    let hoveredItem = null;
+    let hoveredNpc = null;
+
+    const smoothCamPos = new THREE.Vector3(28.0, 12.5, 39.5);
+    const smoothLookAt = new THREE.Vector3(28.0, 2.8, 26.0);
+
+    let localAvatar = createAvatarMesh('Guest', 1, true);
+    localAvatar.group.visible = true;
+    scene.add(localAvatar.group);
+
+    function rebuildLocalAvatar(user) {
+      const wasVisible = localAvatar.group.visible;
+      scene.remove(localAvatar.group);
+      localAvatar = createAvatarMesh(user.name, user.level, true);
+      localAvatar.group.visible = wasVisible;
+      scene.add(localAvatar.group);
+    }
+
+    const roster = new RosterManager(() => {
+      applyActiveUserState(false);
+    });
+
+    // Floating 3D Stair Indicators (▲ UP / ▼ DOWN / 🔒 LOCKED)
+    const stairZones = world.getStairZones();
+    const stairMarkersGroup = new THREE.Group();
+    scene.add(stairMarkersGroup);
+
+    function createStairSignSprite(text, bgColor, borderColor) {
+      const c = document.createElement('canvas');
+      c.width = 512;
+      c.height = 112;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = bgColor;
+      ctx.beginPath();
+      ctx.roundRect(16, 12, 480, 88, 24);
+      ctx.fill();
+      ctx.strokeStyle = borderColor;
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 48px "Segoe UI", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, 256, 58);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.minFilter = THREE.LinearFilter;
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+      const sp = new THREE.Sprite(mat);
+      sp.scale.set(2.3, 0.5, 1);
+      return sp;
+    }
+
+    function rebuildStairMarkers(activeLevel, maxAllowedLevel) {
+      while (stairMarkersGroup.children.length > 0) {
+        const ch = stairMarkersGroup.children[0];
+        stairMarkersGroup.remove(ch);
+        if (ch.material && ch.material.map) ch.material.map.dispose();
+        if (ch.material) ch.material.dispose();
+      }
+      for (const sz of stairZones) {
+        if (sz.fromLevel !== activeLevel) continue;
+        const isLocked = sz.dir === 'up' && sz.toLevel > maxAllowedLevel;
+        const label = isLocked
+          ? `🔒 F${sz.toLevel} Locked`
+          : (sz.dir === 'up' ? `▲ UP to F${sz.toLevel}` : `▼ DOWN to F${sz.toLevel}`);
+        const bg = isLocked ? '#fca5a5' : (sz.dir === 'up' ? '#fde047' : '#7dd3fc');
+        const bd = isLocked ? '#991b1b' : '#0f172a';
+        const sp = createStairSignSprite(label, bg, bd);
+        sp.position.set(sz.markerX, sz.standY + 2.35, sz.markerZ);
+        stairMarkersGroup.add(sp);
+      }
+    }
+
+    // =========================================================================
+    // Classic Pokemon-Style Dialogue & Talk System
+    // =========================================================================
+    const pkmnDialogEl = document.getElementById('pkmn-dialog');
+    const pkmnSpeakerEl = document.getElementById('pkmn-speaker');
+    const pkmnTextEl = document.getElementById('pkmn-text');
+    const pkmnChoicesEl = document.getElementById('pkmn-choices');
+    const pkmnOptFollowBtn = document.getElementById('pkmn-opt-follow');
+    const pkmnReplyInput = document.getElementById('pkmn-reply-input');
+
+    let activeDialogNpc = null;
+    let typewriterTimer = null;
+
+    function isDialogOpen() {
+      return pkmnDialogEl.classList.contains('open');
+    }
+
+    function setDialogText(fullText) {
+      if (typewriterTimer) clearInterval(typewriterTimer);
+      pkmnTextEl.textContent = '';
+      let idx = 0;
+      typewriterTimer = setInterval(() => {
+        idx += 2;
+        pkmnTextEl.textContent = fullText.slice(0, idx);
+        if (idx >= fullText.length) {
+          clearInterval(typewriterTimer);
+          typewriterTimer = null;
+        }
+      }, 16);
+    }
+
+    function openNpcDialog(npc) {
+      sfx.ensure();
+      sfx.blip();
+      activeDialogNpc = npc;
+      walkTarget = null;
+      crowd.facePlayer(npc, playerPos);
+      pkmnSpeakerEl.textContent = `${npc.name} • Floor ${npc.level} (${npc.role})`;
+      pkmnChoicesEl.style.display = 'flex';
+      pkmnOptFollowBtn.style.display = npc.isRemote ? 'none' : 'inline-block';
+      pkmnOptFollowBtn.textContent = npc.following ? 'Stop Following' : 'Follow Me!';
+      pkmnReplyInput.placeholder = `Talk to ${npc.name}...`;
+      pkmnDialogEl.classList.add('open');
+      setDialogText(crowd.buildGreeting(npc));
+    }
+
+    function openPropDialog(title, text) {
+      sfx.ensure();
+      sfx.blip();
+      activeDialogNpc = null;
+      walkTarget = null;
+      pkmnSpeakerEl.textContent = title;
+      pkmnChoicesEl.style.display = 'none';
+      pkmnDialogEl.classList.add('open');
+      setDialogText(text);
+    }
+
+    function closeDialog() {
+      if (typewriterTimer) { clearInterval(typewriterTimer); typewriterTimer = null; }
+      pkmnDialogEl.classList.remove('open');
+      activeDialogNpc = null;
+    }
+
+    document.getElementById('pkmn-close').addEventListener('click', closeDialog);
+
+    document.getElementById('pkmn-opt-hi').addEventListener('click', () => {
+      if (!activeDialogNpc) return;
+      sfx.blip();
+      const me = roster.getActiveUser();
+      const reply = crowd.buildReply(activeDialogNpc, 'Hi!', me.name);
+      setDialogText(reply);
+      pushChat(`${me.name} → ${activeDialogNpc.name}`, 'Hi!');
+    });
+
+    document.getElementById('pkmn-opt-floor').addEventListener('click', () => {
+      if (!activeDialogNpc) return;
+      sfx.blip();
+      const me = roster.getActiveUser();
+      const reply = crowd.buildReply(activeDialogNpc, 'Tell me about this floor & item!', me.name);
+      setDialogText(reply);
+    });
+
+    document.getElementById('pkmn-opt-follow').addEventListener('click', () => {
+      if (!activeDialogNpc) return;
+      sfx.blip();
+      const me = roster.getActiveUser();
+      const reply = crowd.buildReply(activeDialogNpc, 'Follow me', me.name);
+      pkmnOptFollowBtn.textContent = activeDialogNpc.following ? 'Stop Following' : 'Follow Me!';
+      setDialogText(reply);
+    });
+
+    document.getElementById('pkmn-reply-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!activeDialogNpc) return;
+      const txt = pkmnReplyInput.value.trim();
+      if (!txt) return;
+      pkmnReplyInput.value = '';
+      sfx.blip();
+      const me = roster.getActiveUser();
+      pushChat(`${me.name} → ${activeDialogNpc.name}`, txt);
+      sendLiveChat(`${me.name} [F${me.level}]`, txt, activeDialogNpc.name);
+      const reply = crowd.buildReply(activeDialogNpc, txt, me.name);
+      setDialogText(reply);
+    });
+
+    // Check interactive furniture/prop right in front of the player (Pokemon facing check!)
+    function checkFacingProp() {
+      const fx = Math.floor(playerPos.x - Math.sin(yaw) * 1.15);
+      const fz = Math.floor(playerPos.z - Math.cos(yaw) * 1.15);
+      const fy = Math.floor(playerPos.y);
+      const probes = [
+        [fx, fy, fz],
+        [fx, fy + 1, fz],
+        [Math.floor(playerPos.x), fy, Math.floor(playerPos.z)],
+      ];
+      for (const [bx, by, bz] of probes) {
+        const blk = world.get(bx, by, bz);
+        if (blk === BLOCKS.COFFEE_BAR) {
+          return { title: '☕ PG17 Espresso Bar', msg: '▶ You brewed a fresh double-shot latte! Energy restored!' };
+        }
+        if (blk === BLOCKS.PINGPONG) {
+          return { title: '🏓 Ping-Pong Table', msg: '▶ Rally time! Smashed a cross-court spin shot in the Relax Corner!' };
+        }
+        if (blk === BLOCKS.GYM_MACHINE) {
+          return { title: '🏋️ PG17 Fitness Station', msg: '▶ Completed a quick workout set! Feeling stronger for the next floor!' };
+        }
+        if (blk === BLOCKS.YOGA_MAT) {
+          return { title: '🧘 Forest Yoga Studio', msg: '▶ Deep breath on the yoga mat... +10 Calmness!' };
+        }
+        if (blk === BLOCKS.ELEVATOR) {
+          return { title: '🛗 PG17 Lift Bank', msg: '▶ Tip: Use the Elevator Panel on the top-right to jump to any unlocked Floor (F1–F6)!' };
+        }
+        if (blk === BLOCKS.LOCKER) {
+          return { title: '🔐 Fitness Locker Cubbies', msg: '▶ Stored gym bag safely in the PG17 Fitness Lockers.' };
+        }
+      }
+      return null;
+    }
+
+    function triggerItem(item) {
+      if (!item) return;
+      sfx.ensure();
+      const msg = item.trigger(sfx, playerPos);
+      spawnParticles(item.group.position.x, item.group.position.y + 0.5, item.group.position.z, '#fde047', 14);
+      openPropDialog(`✨ ${item.name}`, msg);
+      pushChat('', msg, true);
+    }
+
+    function performPrimaryAction() {
+      if (isDialogOpen()) {
+        closeDialog();
+        return;
+      }
+      if (hoveredNpc) {
+        openNpcDialog(hoveredNpc);
+        return;
+      }
+      if (hoveredItem) {
+        triggerItem(hoveredItem);
+        return;
+      }
+      const nearNpc = crowd.getNearestTalkable(playerPos, 3.2);
+      const nearItem = itemManager.getNearestItem(playerPos, 3.8);
+      if (nearNpc && (!nearItem || nearNpc.pos.distanceTo(playerPos) <= nearItem.group.position.distanceTo(playerPos))) {
+        openNpcDialog(nearNpc);
+        return;
+      }
+      if (nearItem) {
+        triggerItem(nearItem);
+        return;
+      }
+      const prop = checkFacingProp();
+      if (prop) {
+        openPropDialog(prop.title, prop.msg);
+        return;
+      }
+      const curFl = world.getFloorAtY(playerPos.y);
+      showToast(`Walk up to any person, ${curFl.uniqueItem}, coffee bar, or gym station and press [E]!`, true);
+    }
+
+    function teleportToFloor(floorObj, announce = true) {
+      const user = roster.getActiveUser();
+      const maxAllowed = world.getMaxAllowedFloorObj(user.level);
+      if (floorObj.level > maxAllowed.level) {
+        sfx.denied();
+        showToast(`🔒 Access Denied: Floor ${floorObj.level} (${floorObj.shortName}) requires Floor ${floorObj.level}+. Your access: Floor ${user.level}.`, true);
+        return false;
+      }
+      closeDialog();
+      viewedFloorObj = floorObj;
+      walkTarget = null;
+      playerPos.set(34.0, floorObj.standY, 13.0);
+      playerVel.set(0, 0, 0);
+      yaw = Math.PI;
+      if (cameraMode !== 2 && sliceFloors) rebuildWorldMesh();
+      if (announce) {
+        sfx.elevator();
+        pushChat('', `🛗 Floor ${floorObj.level} — ${floorObj.shortName} | Unique Item: ${floorObj.uniqueItem}`, true);
+      }
+      rebuildStairMarkers(viewedFloorObj.level, maxAllowed.level);
+      renderFloorButtons();
+      return true;
+    }
+
+    function applyActiveUserState(teleportToAssigned = false) {
+      const user = roster.getActiveUser();
+      const maxFloor = world.getMaxAllowedFloorObj(user.level);
+      world.applyAccessLevel(maxFloor.level);
+      rebuildLocalAvatar(user);
+      crowd.syncUsers(roster.users, user.name);
+
+      if (teleportToAssigned || playerPos.y > maxFloor.standY + 2) {
+        viewedFloorObj = maxFloor;
+        walkTarget = null;
+        playerPos.set(34.0, maxFloor.standY, 13.0);
+        playerVel.set(0, 0, 0);
+        yaw = Math.PI;
+      }
+
+      rebuildWorldMesh();
+      rebuildStairMarkers(viewedFloorObj.level, maxFloor.level);
+      renderUserHud();
+      renderFloorButtons();
+      renderRosterList();
+    }
+
+    // Optional Live Multi-Tab Sync via server.py (/api/sync & /api/chat)
+    // Automatically disabled on static SharePoint (.aspx) / file:// hosts
+    const myClientId = 'p_' + Math.random().toString(36).slice(2, 10);
+    let lastChatId = 0;
+    let syncEnabled = location.protocol !== 'file:' &&
+      !/sharepoint\.com$/i.test(location.hostname) &&
+      !/\.aspx$/i.test(location.pathname);
+
+    async function sendLiveChat(sender, text, target = '') {
+      if (!syncEnabled) return;
+      try {
+        const r = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sender, text, target }),
+        });
+        if (!r.ok) syncEnabled = false;
+      } catch (e) { syncEnabled = false; }
+    }
+
+    const syncTimer = setInterval(async () => {
+      if (!syncEnabled) {
+        clearInterval(syncTimer);
+        return;
+      }
+      try {
+        const me = roster.getActiveUser();
+        const res = await fetch('/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: myClientId,
+            name: me.name,
+            level: me.level,
+            x: playerPos.x,
+            y: playerPos.y,
+            z: playerPos.z,
+            yaw: yaw + Math.PI,
+            sinceChatId: lastChatId,
+          }),
+        });
+        if (!res.ok) {
+          syncEnabled = false;
+          clearInterval(syncTimer);
+          return;
+        }
+        const data = await res.json();
+        if (Array.isArray(data.players)) {
+          crowd.syncRemotePlayers(data.players, myClientId);
+        }
+        if (Array.isArray(data.chats)) {
+          for (const c of data.chats) {
+            lastChatId = Math.max(lastChatId, c.id);
+            const myTag = `${me.name} [F${me.level}]`;
+            if (c.sender !== myTag) {
+              pushChat(c.sender, c.text);
+              if (c.target && c.target.toLowerCase() === me.name.toLowerCase()) {
+                openPropDialog(`💬 Message from ${c.sender}`, c.text);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        syncEnabled = false;
+        clearInterval(syncTimer);
+      }
+    }, 300);
+
+    // UI Elements
+    const hudUserEl = document.getElementById('hud-user-badge');
+    const hudUpgradeEl = document.getElementById('hud-upgrade-note');
+    const floorLandmarkEl = document.getElementById('floor-landmark-badge');
+    const floorBtnsEl = document.getElementById('floor-buttons');
+    const rosterListEl = document.getElementById('roster-list');
+    const rosterSummaryEl = document.getElementById('roster-summary');
+    const itemPromptEl = document.getElementById('item-prompt');
+    const comfortTipEl = document.getElementById('comfort-tip');
+    const crosshairEl = document.getElementById('crosshair');
+
+    function renderUserHud() {
+      const user = roster.getActiveUser();
+      const maxFloor = world.getMaxAllowedFloorObj(user.level);
+      const nextLvl = nextUpgradeLevel(user.level);
+      hudUserEl.innerHTML = `<strong>${escapeHtml(user.name)}</strong> • Access Floor ${user.level} <span class="badge-pill" style="background:${maxFloor.accent};color:#0f172a">F1 → F${maxFloor.level}</span>`;
+      if (maxFloor.level >= 6) {
+        hudUpgradeEl.textContent = `✨ Top Floor Unlocked! Full access to Floors 1 → 6.`;
+      } else {
+        const nextObj = PG17_LEVELS.find((l) => l.level === nextLvl);
+        hudUpgradeEl.textContent = `⬆️ Next Level Up (F${nextLvl}): ${nextObj ? nextObj.upgradeNote : ''}`;
+      }
+      const btnUp = document.getElementById('btn-level-up-me');
+      btnUp.disabled = maxFloor.level >= 6;
+      btnUp.textContent = maxFloor.level >= 6 ? 'Max Floor (F6)' : `Level Up Me → F${nextLvl}`;
+    }
+
+    function renderFloorButtons() {
+      const user = roster.getActiveUser();
+      const maxFloor = world.getMaxAllowedFloorObj(user.level);
+      const currentStanding = world.getFloorAtY(playerPos.y);
+      const activeView = cameraMode !== 2 ? viewedFloorObj : currentStanding;
+
+      floorLandmarkEl.textContent = `Floor ${activeView.level} Item: ${activeView.uniqueItem}`;
+
+      floorBtnsEl.innerHTML = '';
+      [...PG17_LEVELS].reverse().forEach((lvl) => {
+        const unlocked = lvl.level <= maxFloor.level;
+        const isCurrent = activeView.level === lvl.level;
+        const btn = document.createElement('button');
+        btn.className = `floor-btn ${unlocked ? 'unlocked' : 'locked'} ${isCurrent ? 'current' : ''}`;
+        btn.innerHTML = `<span class="fl-code">${lvl.code}</span><span class="fl-name">${lvl.shortName}</span><span class="fl-icon">${unlocked ? (isCurrent ? '●' : '✓') : '🔒'}</span>`;
+        btn.title = unlocked ? `${lvl.shortName} • ${lvl.uniqueItem}` : `Locked: Requires Floor ${lvl.level}+`;
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          teleportToFloor(lvl, true);
+        });
+        floorBtnsEl.appendChild(btn);
+      });
+    }
+
+    function renderRosterList() {
+      const active = roster.getActiveUser();
+      rosterSummaryEl.textContent = `${roster.users.length} Users in Excel Access List`;
+      rosterListEl.innerHTML = '';
+
+      const sorted = [...roster.users].sort((a, b) => b.level - a.level || a.name.localeCompare(b.name));
+      sorted.forEach((u) => {
+        const isMe = u.name.toLowerCase() === active.name.toLowerCase();
+        const maxFl = world.getMaxAllowedFloorObj(u.level);
+        const row = document.createElement('div');
+        row.className = 'roster-row' + (isMe ? ' active-me' : '');
+        row.innerHTML = `
+          <div class="roster-info">
+            <span class="roster-name">${escapeHtml(u.name)}${isMe ? ' (You)' : ''}</span>
+            <span class="roster-meta">Floor ${u.level} (Walk F1–F${maxFl.level}) • ${escapeHtml(u.role || 'Member')}</span>
+          </div>
+          <div class="roster-actions">
+            <button class="mini-btn login-btn">${isMe ? 'Active' : 'Login'}</button>
+            <button class="mini-btn up-btn" ${u.level >= 6 ? 'disabled' : ''}>+Lvl</button>
+            <button class="mini-btn del-btn">✕</button>
+          </div>
+        `;
+        row.querySelector('.login-btn').addEventListener('click', () => {
+          roster.login(u.name);
+          applyActiveUserState(true);
+          pushChat('', `🔑 Logged in as ${u.name} (Floor ${u.level} — walks F1..F${maxFl.level})`, true);
+        });
+        row.querySelector('.up-btn').addEventListener('click', () => {
+          const updated = roster.levelUpUser(u.name);
+          if (updated) {
+            sfx.levelUp();
+            const newFl = world.getMaxAllowedFloorObj(updated.level);
+            showToast(`⬆️ ${updated.name} leveled up to Floor ${updated.level} (${newFl.shortName})!`, false);
+            pushChat('', `✨ ${updated.name} leveled up to Floor ${updated.level}! Unlocked ${newFl.shortName}.`, true);
+          }
+        });
+        row.querySelector('.del-btn').addEventListener('click', () => {
+          roster.removeUser(u.name);
+        });
+        rosterListEl.appendChild(row);
+      });
+    }
+
+    document.getElementById('btn-interact').addEventListener('click', (e) => {
+      e.stopPropagation();
+      performPrimaryAction();
+    });
+    itemPromptEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      performPrimaryAction();
+    });
+
+    // D-Pad Controls (Pokemon style!)
+    const dpadState = { up: false, down: false, left: false, right: false };
+    document.querySelectorAll('#pkmn-dpad .dpad-btn').forEach((btn) => {
+      const dir = btn.dataset.dir;
+      if (dir === 'act') {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); performPrimaryAction(); });
+        return;
+      }
+      const down = (e) => { e.stopPropagation(); dpadState[dir] = true; walkTarget = null; };
+      const up = () => { dpadState[dir] = false; };
+      btn.addEventListener('mousedown', down);
+      btn.addEventListener('touchstart', down, { passive: true });
+      window.addEventListener('mouseup', up);
+      window.addEventListener('touchend', up);
+    });
+
+    // Drawer Controls
+    const rosterDrawer = document.getElementById('roster-drawer');
+    function setDrawerOpen(open) {
+      drawerOpen = open;
+      rosterDrawer.classList.toggle('open', drawerOpen);
+    }
+    document.getElementById('btn-toggle-drawer').addEventListener('click', (e) => {
+      e.stopPropagation();
+      setDrawerOpen(!drawerOpen);
+    });
+    document.getElementById('btn-close-drawer').addEventListener('click', () => setDrawerOpen(false));
+
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const val = document.getElementById('login-name-input').value.trim();
+      if (!val) return;
+      const u = roster.login(val);
+      document.getElementById('login-name-input').value = '';
+      applyActiveUserState(true);
+      const maxFl = world.getMaxAllowedFloorObj(u.level);
+      showToast(`🔑 Logged in as ${u.name} (Floor ${u.level} — ${maxFl.shortName})`, false);
+    });
+
+    document.getElementById('add-user-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('add-name').value.trim();
+      const level = document.getElementById('add-level').value;
+      const role = document.getElementById('add-role').value.trim() || 'Member';
+      if (!name) return;
+      const u = roster.addOrUpdateUser(name, level, role);
+      document.getElementById('add-name').value = '';
+      document.getElementById('add-role').value = '';
+      showToast(`✅ Saved ${u.name} on Floor ${u.level}`, false);
+    });
+
+    document.getElementById('btn-level-up-me').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const me = roster.getActiveUser();
+      const updated = roster.levelUpUser(me.name);
+      if (updated) {
+        sfx.levelUp();
+        const newFl = world.getMaxAllowedFloorObj(updated.level);
+        showToast(`⬆️ Level Up! ${updated.name} reached Floor ${updated.level} (${newFl.shortName})!`, false);
+        pushChat('', `✨ LEVEL UP! ${updated.name} unlocked Floor ${updated.level}: ${newFl.upgradeNote}`, true);
+      }
+    });
+
+    const excelInput = document.getElementById('excel-file-input');
+    document.getElementById('btn-upload-excel').addEventListener('click', () => excelInput.click());
+    excelInput.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const count = await roster.importFile(file);
+        applyActiveUserState(true);
+        showToast(`📊 Imported ${count} users from ${file.name}!`, false);
+      } catch (err) {
+        showToast(`⚠️ Import error: ${err.message}`, true);
+      }
+      excelInput.value = '';
+    });
+
+    document.getElementById('btn-download-excel').addEventListener('click', () => {
+      const fname = roster.exportExcelOrCsv();
+      showToast(`💾 Downloaded ${fname}`, false);
+    });
+    document.getElementById('btn-reset-roster').addEventListener('click', () => {
+      roster.resetDefaults();
+      applyActiveUserState(true);
+      showToast('🔄 Reset to default Floors 1–6 roster', false);
+    });
+
+    // Camera Mode & Slicer Controls
+    const btnCamera = document.getElementById('btn-camera');
+    const btnSlice = document.getElementById('btn-slice');
+    const btnTime = document.getElementById('btn-time');
+
+    function updateButtons() {
+      btnCamera.textContent = `View: ${CAMERA_MODES[cameraMode]} [C]`;
+      btnSlice.textContent = `Slice Floor: ${sliceFloors ? 'ON' : 'OFF'} [R]`;
+      btnTime.textContent = `${isNight ? 'Night' : 'Day'} [T]`;
+
+      if (cameraMode === 0) {
+        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> WASD / Arrows or click floor to walk. Click any person/item or [E] to talk &amp; interact!';
+        crosshairEl.style.display = 'none';
+      } else if (cameraMode === 1) {
+        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Full floorplan overview. Click floor or WASD to walk, click any person/item to interact.';
+        crosshairEl.style.display = 'none';
+      } else {
+        comfortTipEl.innerHTML = '<strong>1st Person Surround:</strong> Drag or A/D to look 360° horizontally (horizon locked, no up/down tilt). [C] to walk again.';
+        crosshairEl.style.display = 'block';
+      }
+    }
+
+    function cycleCameraMode() {
+      cameraMode = (cameraMode + 1) % 3;
+      if (cameraMode === 2) {
+        walkTarget = null;
+        localAvatar.group.visible = false;
+        sliceFloors = false;
+      } else {
+        localAvatar.group.visible = true;
+        sliceFloors = true;
+      }
+      viewedFloorObj = world.getFloorAtY(playerPos.y);
+      rebuildWorldMesh();
+      updateButtons();
+      renderFloorButtons();
+    }
+
+    function toggleSlice() {
+      sliceFloors = !sliceFloors;
+      viewedFloorObj = world.getFloorAtY(playerPos.y);
+      rebuildWorldMesh();
+      updateButtons();
+    }
+
+    function toggleTimeOfDay() {
+      isNight = !isNight;
+      if (isNight) {
+        scene.background.setHex(0x0f172a);
+        scene.fog.color.setHex(0x0f172a);
+        hemiLight.intensity = 0.42;
+        sunLight.intensity = 0.30;
+        pointLights.forEach((l) => (l.intensity = 0.72));
+      } else {
+        scene.background.setHex(0x93c5fd);
+        scene.fog.color.setHex(0x93c5fd);
+        hemiLight.intensity = 0.94;
+        sunLight.intensity = 0.85;
+        pointLights.forEach((l) => (l.intensity = 0.38));
+      }
+      updateButtons();
+    }
+
+    btnCamera.addEventListener('click', (e) => { e.stopPropagation(); cycleCameraMode(); });
+    btnSlice.addEventListener('click', (e) => { e.stopPropagation(); toggleSlice(); });
+    btnTime.addEventListener('click', (e) => { e.stopPropagation(); toggleTimeOfDay(); });
+
+    // Cursor Raycasting & Drag Look
+    const raycaster = new THREE.Raycaster();
+    const mouseNdc = new THREE.Vector2(0, 0);
+    let isDraggingLook = false;
+    let dragStartX = 0;
+    let dragMoved = false;
+
+    function updateCursorRay(clientX, clientY) {
+      mouseNdc.x = (clientX / window.innerWidth) * 2 - 1;
+      mouseNdc.y = -(clientY / window.innerHeight) * 2 + 1;
+    }
+
+    renderer.domElement.addEventListener('mousemove', (e) => {
+      updateCursorRay(e.clientX, e.clientY);
+      if (isDraggingLook) {
+        if (Math.abs(e.clientX - dragStartX) > 4) dragMoved = true;
+        if (cameraMode === 2) {
+          yaw -= (e.movementX || 0) * 0.0045;
+        } else {
+          camYaw -= (e.movementX || 0) * 0.004;
+        }
+      }
+    });
+
+    renderer.domElement.addEventListener('mousedown', (e) => {
+      sfx.ensure();
+      if (drawerOpen) return;
+      updateCursorRay(e.clientX, e.clientY);
+      dragStartX = e.clientX;
+      dragMoved = false;
+      if (e.button === 2 || (e.button === 0 && cameraMode === 2)) {
+        isDraggingLook = true;
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      const wasDrag = dragMoved;
+      isDraggingLook = false;
+      if (drawerOpen) return;
+      if (e.target !== renderer.domElement) return;
+      if (wasDrag) return;
+
+      if (e.button === 0) {
+        raycaster.setFromCamera(mouseNdc, camera);
+
+        // 1. Clicked on an NPC or Live User? Talk to them!
+        const npcHits = raycaster.intersectObjects(crowd.getNpcMeshes(), true);
+        if (npcHits.length > 0 && npcHits[0].object.visible) {
+          const npcName = npcHits[0].object.userData.npcName;
+          const npc = crowd.findNpcByName(npcName);
+          if (npc) {
+            openNpcDialog(npc);
+            return;
+          }
+        }
+
+        // 2. Clicked on a floor's Unique Interactive Item? Trigger it!
+        const itemHits = raycaster.intersectObjects(itemManager.getMeshes(), true);
+        if (itemHits.length > 0 && itemHits[0].object.visible) {
+          const item = itemManager.findById(itemHits[0].object.userData.itemId);
+          if (item) {
+            triggerItem(item);
+            return;
+          }
+        }
+
+        // 3. Clicked on floor in Pokemon / Top-Down view? Walk there!
+        if (cameraMode !== 2) {
+          if (isDialogOpen()) closeDialog();
+          const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -viewedFloorObj.standY);
+          const hitPt = new THREE.Vector3();
+          if (raycaster.ray.intersectPlane(floorPlane, hitPt)) {
+            walkTarget = {
+              x: Math.max(2.5, Math.min(world.w - 2.5, hitPt.x)),
+              z: Math.max(2.5, Math.min(world.d - 2.5, hitPt.z)),
+            };
+          }
+        }
+      }
+    });
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Keyboard Input
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      const activeEl = document.activeElement;
+      const typingInInput = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'SELECT');
+      if (e.code === 'Escape' && typingInInput) {
+        activeEl.blur();
+        return;
+      }
+      if (e.code === 'Escape' && isDialogOpen()) {
+        closeDialog();
+        return;
+      }
+      if (typingInInput) return;
+
+      keys[e.code] = true;
+      if (e.code === 'KeyC') {
+        cycleCameraMode();
+      } else if (e.code === 'KeyR') {
+        toggleSlice();
+      } else if (e.code === 'KeyT') {
+        toggleTimeOfDay();
+      } else if (e.code === 'KeyU') {
+        setDrawerOpen(!drawerOpen);
+      } else if (e.code === 'KeyE') {
+        performPrimaryAction();
+      } else if (e.code === 'Enter') {
+        e.preventDefault();
+        chatInput.focus();
+      }
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    // User Community Wall / Post Form
+    const postForm = document.getElementById('post-form');
+    const chatInput = document.getElementById('chat-input');
+    postForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = chatInput.value.trim();
+      if (!txt) return;
+      const me = roster.getActiveUser();
+      const floorNow = world.getFloorAtY(playerPos.y).level;
+      const label = `${me.name} @F${floorNow}`;
+      pushChat(label, txt);
+      sendLiveChat(label, txt);
+      chatInput.value = '';
+      chatInput.blur();
+      sfx.blip();
+    });
+    document.getElementById('btn-clear-posts').addEventListener('click', () => {
+      chatMessagesEl.innerHTML = '';
+      try { localStorage.removeItem(POSTS_STORAGE_KEY); } catch (e) { /* ignore */ }
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Initialize
+    applyActiveUserState(false);
+    updateButtons();
+
+    const loadingEl = document.getElementById('loading-overlay');
+    if (loadingEl) loadingEl.style.display = 'none';
+
+    pushChat('', 'Welcome to PG17 Interactive Campus (Floors 1–6)! Walk with WASD, Arrows, or Click-to-Move.', true);
+    pushChat('', 'Click any person or press [E] near someone to talk! Click unique items on each floor to interact!', true);
+
+    const roomNameEl = document.getElementById('room-name');
+    const totalBadgeEl = document.getElementById('total-players-badge');
+    let lastStandingLevel = world.getFloorAtY(playerPos.y).level;
+    let stairCooldown = 0;
+    let lastTime = performance.now();
+
+    function animate(now) {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      if (stairCooldown > 0) stairCooldown -= dt;
+
+      const activeUser = roster.getActiveUser();
+      const maxAllowedFloor = world.getMaxAllowedFloorObj(activeUser.level);
+      const typingInInput = document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT');
+
+      if (!drawerOpen && !typingInInput) {
+        if (keys['KeyQ']) camYaw += 1.8 * dt;
+        if (keys['KeyZ']) camYaw -= 1.8 * dt;
+      }
+
+      let mx = 0, mz = 0;
+      if (cameraMode === 2) {
+        // 1st Person Surround: look 360° horizontally ONLY (cannot walk or tilt up/down!)
+        if (!drawerOpen && !typingInInput) {
+          if (keys['KeyA'] || keys['ArrowLeft'] || dpadState.left) yaw += 2.1 * dt;
+          if (keys['KeyD'] || keys['ArrowRight'] || dpadState.right) yaw -= 2.1 * dt;
+        }
+        playerVel.set(0, 0, 0);
+      } else {
+        const forwardX = -Math.sin(camYaw);
+        const forwardZ = -Math.cos(camYaw);
+        const rightX = Math.cos(camYaw);
+        const rightZ = -Math.sin(camYaw);
+
+        let keyInput = false;
+        if (!drawerOpen && !typingInInput) {
+          if (keys['KeyW'] || keys['ArrowUp'] || dpadState.up)       { mx += forwardX; mz += forwardZ; keyInput = true; }
+          if (keys['KeyS'] || keys['ArrowDown'] || dpadState.down)   { mx -= forwardX; mz -= forwardZ; keyInput = true; }
+          if (keys['KeyA'] || keys['ArrowLeft'] || dpadState.left)   { mx -= rightX;   mz -= rightZ;   keyInput = true; }
+          if (keys['KeyD'] || keys['ArrowRight'] || dpadState.right) { mx += rightX;   mz += rightZ;   keyInput = true; }
+        }
+        if (keyInput) {
+          walkTarget = null;
+          if (isDialogOpen()) closeDialog();
+        }
+
+        if (walkTarget) {
+          const dx = walkTarget.x - playerPos.x;
+          const dz = walkTarget.z - playerPos.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 0.35) {
+            walkTarget = null;
+          } else {
+            mx = dx / dist;
+            mz = dz / dist;
+          }
+        }
+
+        const mLen = Math.hypot(mx, mz);
+        if (mLen > 0) {
+          mx /= mLen; mz /= mLen;
+          const targetYaw = Math.atan2(-mx, -mz);
+          let diff = targetYaw - yaw;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          yaw += diff * Math.min(1, dt * 13);
+        }
+
+        const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? 8.8 : 5.6;
+        playerVel.x = mx * speed;
+        playerVel.z = mz * speed;
+
+        const prevX = playerPos.x;
+        const prevY = playerPos.y;
+        const prevZ = playerPos.z;
+
+        playerVel.y -= 20 * dt;
+        onGround = moveWithCollision(world, playerPos, playerVel, dt);
+
+        // STAIRWELL UP & DOWN TRANSITION (Pokemon-style smooth floor change if access allows!)
+        if (stairCooldown <= 0) {
+          for (const sz of stairZones) {
+            if (Math.abs(playerPos.y - sz.standY) > 1.35) continue;
+            const locked = sz.dir === 'up' && sz.toLevel > maxAllowedFloor.level;
+            const padZ = locked ? 1.35 : 0.0;
+            const inX = playerPos.x >= sz.minX && playerPos.x <= sz.maxX;
+            const inZ = playerPos.z >= (sz.minZ - padZ) && playerPos.z <= (sz.maxZ + padZ);
+            if (!inX || !inZ) continue;
+
+            if (locked) {
+              walkTarget = null;
+              if (now - lastDeniedAt > 1400) {
+                lastDeniedAt = now;
+                sfx.denied();
+                const targetFl = PG17_LEVELS.find((l) => l.level === sz.toLevel);
+                showToast(`🔒 Stairs Locked: Floor ${sz.toLevel} (${targetFl ? targetFl.shortName : ''}) requires Floor ${sz.toLevel}+. Your Access: Floor ${activeUser.level}`, true);
+              }
+            } else {
+              playerPos.set(sz.spawnX, sz.spawnY, sz.spawnZ);
+              playerVel.set(0, 0, 0);
+              yaw = sz.spawnYaw;
+              walkTarget = null;
+              stairCooldown = 0.85;
+              const destFl = world.getFloorAtY(playerPos.y);
+              viewedFloorObj = destFl;
+              lastStandingLevel = destFl.level;
+              rebuildWorldMesh();
+              rebuildStairMarkers(destFl.level, maxAllowedFloor.level);
+              renderFloorButtons();
+              sfx.elevator();
+              const arrow = sz.dir === 'up' ? '▲ Walked up stairs to' : '▼ Walked down stairs to';
+              showToast(`${arrow} Floor ${destFl.level} — ${destFl.shortName}`, false);
+              pushChat('', `🪜 ${arrow} Floor ${destFl.level} (${destFl.shortName})`, true);
+            }
+            break;
+          }
+        }
+
+        // STRICT FLOOR-LEVEL GATING
+        const maxPermitStandY = maxAllowedFloor.standY + 1.25;
+        if (playerPos.y > maxPermitStandY) {
+          playerPos.x = prevX;
+          playerPos.y = Math.min(prevY, maxAllowedFloor.standY);
+          playerPos.z = prevZ;
+          playerVel.y = 0;
+          walkTarget = null;
+          if (now - lastDeniedAt > 1400) {
+            lastDeniedAt = now;
+            sfx.denied();
+            const nextLvl = nextUpgradeLevel(activeUser.level);
+            const nextObj = PG17_LEVELS.find((l) => l.level === nextLvl);
+            showToast(`🔒 Access Denied: Floor ${nextLvl} (${nextObj ? nextObj.shortName : ''}) requires Floor ${nextLvl}+. Your Access: Floor ${activeUser.level}`, true);
+          }
+        }
+      }
+
+      const standingFloor = world.getFloorAtY(playerPos.y);
+      if (standingFloor.level !== lastStandingLevel) {
+        lastStandingLevel = standingFloor.level;
+        viewedFloorObj = standingFloor;
+        rebuildStairMarkers(standingFloor.level, maxAllowedFloor.level);
+        renderFloorButtons();
+        if (cameraMode !== 2 && sliceFloors) rebuildWorldMesh();
+      }
+
+      const horizSpeed = Math.hypot(playerVel.x, playerVel.z);
+      if (onGround && horizSpeed > 1.0 && cameraMode !== 2) {
+        sfx.stepTimer -= dt;
+        if (sfx.stepTimer <= 0) {
+          sfx.step();
+          sfx.stepTimer = (keys['ShiftLeft'] || keys['ShiftRight']) ? 0.26 : 0.36;
+        }
+      }
+
+      localAvatar.group.position.copy(playerPos);
+      localAvatar.group.rotation.y = yaw + Math.PI;
+      localAvatar.animate(horizSpeed, dt);
+
+      // Camera Positioning
+      if (cameraMode === 0) {
+        // Cozy Pokemon 3/4 Follow Camera (matches Pokopia reference!)
+        const dist = 13.5;
+        const height = 10.5;
+        const desiredPos = new THREE.Vector3(
+          playerPos.x + Math.sin(camYaw) * dist,
+          playerPos.y + height,
+          playerPos.z + Math.cos(camYaw) * dist
+        );
+        smoothCamPos.lerp(desiredPos, Math.min(1, dt * 8));
+        smoothLookAt.lerp(new THREE.Vector3(playerPos.x, playerPos.y + 1.0, playerPos.z), Math.min(1, dt * 10));
+        camera.position.copy(smoothCamPos);
+        camera.lookAt(smoothLookAt);
+      } else if (cameraMode === 1) {
+        // Top-Down Map Walk
+        const dist = 17.5;
+        const height = 24.5;
+        const desiredPos = new THREE.Vector3(
+          playerPos.x + Math.sin(camYaw) * dist,
+          playerPos.y + height,
+          playerPos.z + Math.cos(camYaw) * dist
+        );
+        smoothCamPos.lerp(desiredPos, Math.min(1, dt * 8));
+        smoothLookAt.lerp(new THREE.Vector3(playerPos.x, playerPos.y + 0.8, playerPos.z), Math.min(1, dt * 10));
+        camera.position.copy(smoothCamPos);
+        camera.lookAt(smoothLookAt);
+      } else {
+        // 1st Person Surround: strictly horizontal (pitch = 0, NO up/down tilt!)
+        camera.position.set(playerPos.x, playerPos.y + 1.58, playerPos.z);
+        camera.rotation.order = 'YXZ';
+        camera.rotation.y = yaw;
+        camera.rotation.x = 0;
+        camera.rotation.z = 0;
+      }
+
+      // Cursor Raycast for Floor Ring, NPC Hover & Item Hover
+      raycaster.setFromCamera(mouseNdc, camera);
+      hoveredNpc = null;
+      hoveredItem = null;
+
+      const npcHits = raycaster.intersectObjects(crowd.getNpcMeshes(), true);
+      if (npcHits.length > 0 && npcHits[0].object.visible) {
+        hoveredNpc = crowd.findNpcByName(npcHits[0].object.userData.npcName);
+      }
+      if (!hoveredNpc) {
+        const itemHits = raycaster.intersectObjects(itemManager.getMeshes(), true);
+        if (itemHits.length > 0 && itemHits[0].object.visible) {
+          hoveredItem = itemManager.findById(itemHits[0].object.userData.itemId);
+        }
+      }
+
+      if (cameraMode !== 2 && !drawerOpen) {
+        const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -viewedFloorObj.standY);
+        const hitPt = new THREE.Vector3();
+        if (raycaster.ray.intersectPlane(floorPlane, hitPt) && hitPt.x >= 2 && hitPt.x <= world.w - 2 && hitPt.z >= 2 && hitPt.z <= world.d - 2) {
+          cursorRing.visible = true;
+          cursorRing.position.set(hitPt.x, viewedFloorObj.standY + 0.04, hitPt.z);
+          cursorRingMat.color.setHex((hoveredNpc || hoveredItem) ? 0xfde047 : 0x38bdf8);
+        } else {
+          cursorRing.visible = false;
+        }
+      } else {
+        cursorRing.visible = false;
+      }
+
+      if (walkTarget) {
+        walkTargetRing.visible = true;
+        walkTargetRing.position.set(walkTarget.x, playerPos.y + 0.05, walkTarget.z);
+        const s = 0.85 + Math.sin(now * 0.008) * 0.2;
+        walkTargetRing.scale.set(s, s, 1);
+      } else {
+        walkTargetRing.visible = false;
+      }
+
+      // Prompt pill for hovered or nearby NPC / Unique Item
+      const nearNpc = hoveredNpc || crowd.getNearestTalkable(playerPos, 3.2);
+      const nearItem = hoveredItem || itemManager.getNearestItem(playerPos, 3.8);
+      if (!isDialogOpen() && nearNpc) {
+        itemPromptEl.style.display = 'block';
+        itemPromptEl.textContent = `💬 Talk to ${nearNpc.name} [Click / E]`;
+      } else if (!isDialogOpen() && nearItem) {
+        itemPromptEl.style.display = 'block';
+        itemPromptEl.textContent = `✨ ${nearItem.name} — Click or press [E]: ${nearItem.actionLabel}`;
+      } else {
+        itemPromptEl.style.display = 'none';
+      }
+
+      itemManager.update(dt, playerPos, sfx, getActiveSliceMaxY(), (msg) => {
+        showToast(msg, false);
+        pushChat('', msg, true);
+      });
+
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.life -= dt;
+        p.vel.y -= 12 * dt;
+        p.mesh.position.addScaledVector(p.vel, dt);
+        p.mesh.scale.setScalar(Math.max(0.01, p.life * 2));
+        if (p.life <= 0) {
+          scene.remove(p.mesh);
+          particles.splice(i, 1);
+        }
+      }
+
+      crowd.update(dt, camera.position, playerPos, getActiveSliceMaxY());
+
+      roomNameEl.textContent = detectZone(world, playerPos.x, playerPos.y, playerPos.z);
+      totalBadgeEl.textContent = `${crowd.npcs.length + crowd.remotePlayers.size + 1} Active in PG17 (${roster.users.length} Roster)`;
+
+      renderer.render(scene, camera);
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  window.addEventListener('DOMContentLoaded', initGame);
+})(window);
