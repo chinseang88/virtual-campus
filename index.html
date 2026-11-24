@@ -689,6 +689,18 @@
       </form>
     </div>
 
+    <div class="section-box">
+      <div class="section-label">4. Live Multi-User Sync (Firebase Realtime DB)</div>
+      <form id="firebase-form" class="inline-form">
+        <input id="firebase-url-input" type="text" placeholder="https://your-project.firebaseio.com" />
+        <button type="submit" class="mini-btn" style="background:#0284c7;color:#fff">Connect</button>
+      </form>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11px;color:#94a3b8;">
+        <span id="firebase-status">Offline (Local Mode)</span>
+        <button id="btn-copy-share-link" class="mini-btn" type="button">Copy Live Link</button>
+      </div>
+    </div>
+
     <div class="section-label" id="roster-summary">Roster Users</div>
     <div id="roster-list"></div>
   </div>

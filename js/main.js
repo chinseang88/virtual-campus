@@ -588,15 +588,70 @@
       renderRosterList();
     }
 
-    // Optional Live Multi-Tab Sync via server.py (/api/sync & /api/chat)
-    // Automatically disabled on static SharePoint (.aspx) / file:// hosts
+    // =========================================================================
+    // Live Multi-User Sync: Firebase Realtime DB REST OR local server.py
+    // =========================================================================
+    const DEFAULT_FIREBASE_URL = ''; // Paste your https://<project>.firebaseio.com URL here if you want it baked in
+    const FB_STORAGE_KEY = 'pg17_firebase_url_v1';
+
+    function normalizeFirebaseUrl(raw) {
+      const s = String(raw || '').trim().replace(/\/+$/, '');
+      if (!s) return '';
+      if (!/^https:\/\/[a-z0-9.-]+$/i.test(s)) return '';
+      return s;
+    }
+
+    const urlParamFb = new URLSearchParams(location.search).get('fb');
+    let firebaseUrl = normalizeFirebaseUrl(urlParamFb || localStorage.getItem(FB_STORAGE_KEY) || DEFAULT_FIREBASE_URL);
+    if (urlParamFb && firebaseUrl) {
+      try { localStorage.setItem(FB_STORAGE_KEY, firebaseUrl); } catch (e) { /* ignore */ }
+    }
+
     const myClientId = 'p_' + Math.random().toString(36).slice(2, 10);
     let lastChatId = 0;
-    let syncEnabled = location.protocol !== 'file:' &&
+    const seenFirebaseChats = new Set();
+    let lastRosterSyncTs = 0;
+    let isApplyingRemoteRoster = false;
+    let syncEnabled = !firebaseUrl &&
+      location.protocol !== 'file:' &&
       !/sharepoint\.com$/i.test(location.hostname) &&
       !/\.aspx$/i.test(location.pathname);
 
+    const fbInputEl = document.getElementById('firebase-url-input');
+    const fbStatusEl = document.getElementById('firebase-status');
+    if (fbInputEl) fbInputEl.value = firebaseUrl;
+
+    function updateFirebaseStatus(text, ok = false) {
+      if (!fbStatusEl) return;
+      fbStatusEl.textContent = text;
+      fbStatusEl.style.color = ok ? '#4ade80' : '#94a3b8';
+    }
+    if (firebaseUrl) updateFirebaseStatus('Connecting to Firebase...', true);
+
+    async function pushRosterToFirebase() {
+      if (!firebaseUrl || isApplyingRemoteRoster) return;
+      try {
+        const ts = Date.now();
+        lastRosterSyncTs = ts;
+        await fetch(`${firebaseUrl}/roster.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ updatedAt: ts, users: roster.users }),
+        });
+      } catch (e) { /* ignore */ }
+    }
+
     async function sendLiveChat(sender, text, target = '') {
+      if (firebaseUrl) {
+        try {
+          await fetch(`${firebaseUrl}/chats.json`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sender, text, target, ts: Date.now() }),
+          });
+        } catch (e) { /* ignore */ }
+        return;
+      }
       if (!syncEnabled) return;
       try {
         const r = await fetch('/api/chat', {
@@ -608,9 +663,82 @@
       } catch (e) { syncEnabled = false; }
     }
 
+    // Hook roster changes to sync shared Excel list to Firebase
+    const origRosterSave = roster.save.bind(roster);
+    roster.save = function () {
+      origRosterSave();
+      pushRosterToFirebase();
+    };
+
+    // Firebase Realtime Sync Loop (380ms)
+    setInterval(async () => {
+      if (!firebaseUrl) return;
+      try {
+        const me = roster.getActiveUser();
+        const nowTs = Date.now();
+        await fetch(`${firebaseUrl}/players/${myClientId}.json`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: myClientId,
+            name: me.name,
+            level: me.level,
+            x: playerPos.x,
+            y: playerPos.y,
+            z: playerPos.z,
+            yaw: yaw + Math.PI,
+            ts: nowTs,
+          }),
+        });
+
+        const [pRes, cRes, rRes] = await Promise.all([
+          fetch(`${firebaseUrl}/players.json`),
+          fetch(`${firebaseUrl}/chats.json`),
+          fetch(`${firebaseUrl}/roster.json`),
+        ]);
+        if (!pRes.ok) {
+          updateFirebaseStatus(`Firebase error (${pRes.status}) — check Rules`, false);
+          return;
+        }
+        updateFirebaseStatus('Live Connected (Firebase)', true);
+
+        const pData = (await pRes.json()) || {};
+        const active = Object.values(pData).filter((p) => p && nowTs - (p.ts || 0) < 9000);
+        crowd.syncRemotePlayers(active, myClientId);
+
+        const cData = cRes.ok ? ((await cRes.json()) || {}) : {};
+        const myTag = `${me.name} @F${world.getFloorAtY(playerPos.y).level}`;
+        const entries = Object.entries(cData).sort((a, b) => (a[1]?.ts || 0) - (b[1]?.ts || 0)).slice(-30);
+        for (const [key, c] of entries) {
+          if (!c || seenFirebaseChats.has(key)) continue;
+          seenFirebaseChats.add(key);
+          if (nowTs - (c.ts || 0) < 600000 && c.sender !== myTag && c.sender !== `${me.name} [F${me.level}]`) {
+            pushChat(c.sender, c.text, false, true);
+            if (c.target && c.target.toLowerCase() === me.name.toLowerCase()) {
+              openPropDialog(`💬 Message from ${c.sender}`, c.text);
+            }
+          }
+        }
+
+        if (rRes.ok) {
+          const rData = await rRes.json();
+          if (rData && Array.isArray(rData.users) && rData.users.length > 0 && (rData.updatedAt || 0) > lastRosterSyncTs) {
+            lastRosterSyncTs = rData.updatedAt;
+            isApplyingRemoteRoster = true;
+            roster.users = rData.users;
+            origRosterSave();
+            isApplyingRemoteRoster = false;
+          }
+        }
+      } catch (e) {
+        updateFirebaseStatus('Firebase unreachable', false);
+      }
+    }, 380);
+
+    // Local Python server.py Sync Loop (only when no Firebase URL and running on server.py)
     const syncTimer = setInterval(async () => {
-      if (!syncEnabled) {
-        clearInterval(syncTimer);
+      if (firebaseUrl || !syncEnabled) {
+        if (!syncEnabled) clearInterval(syncTimer);
         return;
       }
       try {
@@ -846,6 +974,39 @@
       applyActiveUserState(true);
       showToast('🔄 Reset to default Floors 1–6 roster', false);
     });
+
+    const fbForm = document.getElementById('firebase-form');
+    if (fbForm) {
+      fbForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const clean = normalizeFirebaseUrl(fbInputEl.value);
+        if (!clean) {
+          firebaseUrl = '';
+          try { localStorage.removeItem(FB_STORAGE_KEY); } catch (err) { /* ignore */ }
+          updateFirebaseStatus('Offline (Local Mode)', false);
+          showToast('Disconnected Firebase Live Sync.', true);
+          return;
+        }
+        firebaseUrl = clean;
+        fbInputEl.value = clean;
+        try { localStorage.setItem(FB_STORAGE_KEY, clean); } catch (err) { /* ignore */ }
+        updateFirebaseStatus('Connecting to Firebase...', true);
+        showToast('🔗 Connected Firebase URL! Live multi-user sync active.', false);
+      });
+    }
+    const copyLinkBtn = document.getElementById('btn-copy-share-link');
+    if (copyLinkBtn) {
+      copyLinkBtn.addEventListener('click', async () => {
+        const base = location.origin + location.pathname;
+        const shareUrl = firebaseUrl ? `${base}?fb=${encodeURIComponent(firebaseUrl)}` : base;
+        try {
+          await navigator.clipboard.writeText(shareUrl);
+          showToast('📋 Copied live invite link!', false);
+        } catch (err) {
+          prompt('Copy this invite link:', shareUrl);
+        }
+      });
+    }
 
     // Camera Mode & Slicer Controls
     const btnCamera = document.getElementById('btn-camera');

@@ -694,33 +694,42 @@
     }
 
     getNpcMeshes() {
-      const list = this.npcs.map((n) => n.avatar.group);
-      for (const r of this.remotePlayers.values()) list.push(r.avatar.group);
+      const liveNames = new Set();
+      const list = [];
+      for (const r of this.remotePlayers.values()) {
+        liveNames.add(r.name.toLowerCase());
+        list.push(r.avatar.group);
+      }
+      for (const n of this.npcs) {
+        if (!liveNames.has(n.name.toLowerCase())) list.push(n.avatar.group);
+      }
       return list;
     }
 
     findNpcByName(name) {
       const target = String(name || '').toLowerCase();
-      const local = this.npcs.find((n) => n.name.toLowerCase() === target);
-      if (local) return local;
       for (const r of this.remotePlayers.values()) {
         if (r.name.toLowerCase() === target) return r;
       }
-      return null;
+      const local = this.npcs.find((n) => n.name.toLowerCase() === target);
+      return local || null;
     }
 
     getNearestTalkable(pos, maxDist = 3.2) {
       let best = null;
       let bestDist = maxDist;
-      for (const npc of this.npcs) {
-        if (Math.abs(npc.pos.y - pos.y) > 2.4) continue;
-        const d = Math.hypot(npc.pos.x - pos.x, npc.pos.z - pos.z);
-        if (d < bestDist) { bestDist = d; best = npc; }
-      }
+      const liveNames = new Set();
       for (const r of this.remotePlayers.values()) {
+        liveNames.add(r.name.toLowerCase());
         if (Math.abs(r.pos.y - pos.y) > 2.4) continue;
         const d = Math.hypot(r.pos.x - pos.x, r.pos.z - pos.z);
         if (d < bestDist) { bestDist = d; best = r; }
+      }
+      for (const npc of this.npcs) {
+        if (liveNames.has(npc.name.toLowerCase())) continue;
+        if (Math.abs(npc.pos.y - pos.y) > 2.4) continue;
+        const d = Math.hypot(npc.pos.x - pos.x, npc.pos.z - pos.z);
+        if (d < bestDist) { bestDist = d; best = npc; }
       }
       return best;
     }
@@ -814,8 +823,10 @@
     }
 
     update(dt, cameraPos, playerPos, sliceMaxY = null) {
+      const liveNames = new Set();
       // Update live remote players smoothly
       for (const r of this.remotePlayers.values()) {
+        liveNames.add(r.name.toLowerCase());
         if (sliceMaxY !== null && r.pos.y > sliceMaxY) {
           r.avatar.group.visible = false;
           continue;
@@ -836,7 +847,7 @@
         const npc = this.npcs[i];
         let moveSpeed = 0;
 
-        if (sliceMaxY !== null && npc.pos.y > sliceMaxY) {
+        if (liveNames.has(npc.name.toLowerCase()) || (sliceMaxY !== null && npc.pos.y > sliceMaxY)) {
           npc.avatar.group.visible = false;
           continue;
         }
