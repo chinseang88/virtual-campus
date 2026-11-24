@@ -1,4 +1,4 @@
-// Unique Interactive 3D Landmarks — One Exclusive Item Per PG17 Floor (Floors 1–6)
+// Unique Interactive 3D Landmarks — 3 Exclusive Interactive Items Per Virtual Intel Campus Floor (Floors 1–6)
 (function (global) {
   function box(w, h, d, color, emissive = 0x000000) {
     const geo = new THREE.BoxGeometry(w, h, d);
@@ -7,6 +7,17 @@
     m.castShadow = true;
     m.receiveShadow = true;
     return m;
+  }
+
+  function addGlowRing(root, radius = 1.0, color = 0xfde047) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(radius * 0.78, radius, 32),
+      new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.55 })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.03;
+    root.add(ring);
+    return ring;
   }
 
   function tagItem(group, id) {
@@ -547,6 +558,701 @@
     };
   }
 
+  // =========================================================================
+  // 12 Additional Theme-Matched Interactive Items (2 New Per Floor = 3/Floor)
+  // =========================================================================
+
+  // Floor 1 Item 2: VIP Visitor Check-In Kiosk (Main Reception L2)
+  function createCheckinKiosk() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.05, 0x00c7fd);
+    const base = box(1.15, 0.22, 0.9, 0x1e293b);
+    base.position.set(0, 0.11, 0);
+    const pillar = box(0.42, 1.35, 0.36, 0x334155);
+    pillar.position.set(0, 0.85, 0);
+    const screenFrame = box(1.05, 0.78, 0.16, 0x0f172a);
+    screenFrame.position.set(0, 1.65, 0.08);
+    screenFrame.rotation.x = -0.25;
+    const screen = box(0.9, 0.62, 0.05, 0x00c7fd, 0x0369a1);
+    screen.position.set(0, 1.65, 0.15);
+    screen.rotation.x = -0.25;
+
+    const badge = box(0.45, 0.58, 0.06, 0xfde047, 0x78350f);
+    badge.position.set(0, 2.25, 0.12);
+    badge.visible = false;
+    root.add(base, pillar, screenFrame, screen, badge);
+
+    tagItem(root, 'checkin_kiosk');
+    return {
+      id: 'checkin_kiosk',
+      level: 1,
+      name: 'VIP Check-In Kiosk',
+      actionLabel: 'Print Visitor Pass',
+      group: root,
+      homePos: new THREE.Vector3(49.0, 2, 26.5),
+      radius: 1.2,
+      activeTimer: 0,
+      trigger(fx) {
+        this.activeTimer = 3.2;
+        badge.visible = true;
+        fx.playTone(587.33, 0.1, 0.09, 'sine');
+        setTimeout(() => fx.playTone(880, 0.16, 0.09, 'sine'), 110);
+        return '🪪 Printed a glowing Virtual Intel Campus Visitor Badge at Reception!';
+      },
+      update(dt) {
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.004) * 0.18;
+        if (this.activeTimer > 0) {
+          this.activeTimer -= dt;
+          badge.visible = true;
+          badge.position.y = 2.25 + Math.sin(this.activeTimer * 5) * 0.12;
+          badge.rotation.y += dt * 4.5;
+          screen.material.emissive.setHex(0x0284c7);
+        } else {
+          badge.visible = false;
+          screen.material.emissive.setHex(0x0369a1);
+        }
+      },
+    };
+  }
+
+  // Floor 1 Item 3: Intel Innovation Drone Pad (Lift Lobby LL)
+  function createDronePad() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.15, 0x38bdf8);
+    const pad = box(1.4, 0.14, 1.4, 0x1e293b);
+    pad.position.set(0, 0.07, 0);
+    const beacon = box(0.95, 0.06, 0.95, 0x0068b5, 0x003a70);
+    beacon.position.set(0, 0.16, 0);
+    root.add(pad, beacon);
+
+    const drone = new THREE.Group();
+    drone.position.set(0, 1.15, 0);
+    const core = box(0.52, 0.2, 0.52, 0xf8fafc, 0x0284c7);
+    const cam = box(0.2, 0.14, 0.16, 0x00c7fd, 0x0077b6);
+    cam.position.set(0, -0.05, 0.28);
+    drone.add(core, cam);
+
+    const rotors = [];
+    [[-0.36, 0.12, -0.36], [0.36, 0.12, -0.36], [-0.36, 0.12, 0.36], [0.36, 0.12, 0.36]].forEach(([rx, ry, rz]) => {
+      const arm = box(0.28, 0.06, 0.08, 0x334155);
+      arm.position.set(rx * 0.65, 0.04, rz * 0.65);
+      const blade = box(0.38, 0.03, 0.07, 0x38bdf8, 0x0284c7);
+      blade.position.set(rx, ry, rz);
+      drone.add(arm, blade);
+      rotors.push(blade);
+    });
+    root.add(drone);
+
+    tagItem(root, 'intel_drone_pad');
+    return {
+      id: 'intel_drone_pad',
+      level: 1,
+      name: 'Intel Innovation Drone Pad',
+      actionLabel: 'Launch Patrol Drone',
+      group: root,
+      homePos: new THREE.Vector3(34.0, 2, 15.5),
+      radius: 1.25,
+      flightTimer: 0,
+      phase: 0,
+      trigger(fx) {
+        this.flightTimer = 4.0;
+        fx.playTone(440, 0.12, 0.07, 'sawtooth');
+        setTimeout(() => fx.playTone(659.25, 0.18, 0.08, 'triangle'), 120);
+        return '🛸 Intel Innovation Drone lifts off for a Lobby figure-8 aerial scan!';
+      },
+      update(dt) {
+        this.phase += dt * (this.flightTimer > 0 ? 5.0 : 2.2);
+        rotors.forEach((b) => { b.rotation.y += dt * (this.flightTimer > 0 ? 28 : 10); });
+        ring.material.opacity = 0.45 + Math.sin(this.phase) * 0.2;
+        if (this.flightTimer > 0) {
+          this.flightTimer -= dt;
+          drone.position.x = Math.sin(this.phase * 0.7) * 1.15;
+          drone.position.z = Math.sin(this.phase * 1.4) * 0.75;
+          drone.position.y = 2.0 + Math.sin(this.phase * 1.8) * 0.28;
+          drone.rotation.y = this.phase * 0.8;
+        } else {
+          drone.position.x += (0 - drone.position.x) * Math.min(1, dt * 5);
+          drone.position.z += (0 - drone.position.z) * Math.min(1, dt * 5);
+          drone.position.y = 1.15 + Math.sin(this.phase) * 0.12;
+          drone.rotation.y += dt * 0.6;
+        }
+      },
+    };
+  }
+
+  // Floor 2 Item 2: Electronic Track Sprint Timer (Running Track L1)
+  function createSprintTimer() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.15, 0xeab308);
+    const postL = box(0.22, 2.2, 0.22, 0x334155);
+    postL.position.set(-0.95, 1.1, 0);
+    const postR = box(0.22, 2.2, 0.22, 0x334155);
+    postR.position.set(0.95, 1.1, 0);
+    const beam = box(2.2, 0.52, 0.34, 0x0f172a);
+    beam.position.set(0, 2.25, 0);
+    const ledL = box(0.32, 0.28, 0.38, 0xef4444, 0x7f1d1d);
+    ledL.position.set(-0.55, 2.25, 0);
+    const ledM = box(0.32, 0.28, 0.38, 0xfacc15, 0x713f12);
+    ledM.position.set(0, 2.25, 0);
+    const ledR = box(0.32, 0.28, 0.38, 0x22c55e, 0x14532d);
+    ledR.position.set(0.55, 2.25, 0);
+    root.add(postL, postR, beam, ledL, ledM, ledR);
+
+    tagItem(root, 'sprint_timer');
+    return {
+      id: 'sprint_timer',
+      level: 2,
+      name: 'Track Sprint Timer Gate',
+      actionLabel: 'Start 3-2-1 Sprint Countdown',
+      group: root,
+      homePos: new THREE.Vector3(21.5, 8, 16.5),
+      radius: 1.35,
+      raceTimer: 0,
+      trigger(fx) {
+        this.raceTimer = 3.5;
+        fx.playTone(440, 0.12, 0.08, 'square');
+        setTimeout(() => fx.playTone(440, 0.12, 0.08, 'square'), 450);
+        setTimeout(() => fx.playTone(880, 0.28, 0.1, 'square'), 900);
+        return '⏱️ Track Sprint Countdown: READY... SET... GO! Sprint lap timer started!';
+      },
+      update(dt) {
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.005) * 0.2;
+        if (this.raceTimer > 0) {
+          this.raceTimer -= dt;
+          const elapsed = 3.5 - this.raceTimer;
+          ledL.material.emissive.setHex(elapsed < 0.45 ? 0xdc2626 : 0x220000);
+          ledM.material.emissive.setHex(elapsed >= 0.45 && elapsed < 0.9 ? 0xca8a04 : 0x221100);
+          ledR.material.emissive.setHex(elapsed >= 0.9 ? 0x22c55e : 0x052e16);
+        } else {
+          ledL.material.emissive.setHex(0x450a0a);
+          ledM.material.emissive.setHex(0x422006);
+          ledR.material.emissive.setHex(0x14532d);
+        }
+      },
+    };
+  }
+
+  // Floor 2 Item 3: Basketball Arcade Hoop (Sports L2 Corner)
+  function createArcadeHoop() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.15, 0xf97316);
+    const stand = box(0.28, 2.35, 0.28, 0x1e293b);
+    stand.position.set(0, 1.18, -0.55);
+    const board = box(1.45, 0.95, 0.14, 0xf8fafc);
+    board.position.set(0, 2.45, -0.4);
+    const square = box(0.55, 0.42, 0.16, 0xef4444, 0x7f1d1d);
+    square.position.set(0, 2.35, -0.39);
+    const hoop = new THREE.Mesh(
+      new THREE.TorusGeometry(0.36, 0.05, 10, 24),
+      new THREE.MeshLambertMaterial({ color: 0xf97316, emissive: 0x7c2d12 })
+    );
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.set(0, 2.1, -0.02);
+    const bball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 18, 14),
+      new THREE.MeshLambertMaterial({ color: 0xea580c })
+    );
+    bball.position.set(0, 0.3, 0.55);
+    bball.castShadow = true;
+    root.add(stand, board, square, hoop, bball);
+
+    tagItem(root, 'arcade_hoop');
+    return {
+      id: 'arcade_hoop',
+      level: 2,
+      name: 'Basketball Arcade Hoop',
+      actionLabel: 'Shoot 3-Pointer',
+      group: root,
+      homePos: new THREE.Vector3(45.0, 8, 28.5),
+      radius: 1.3,
+      shotTimer: 0,
+      trigger(fx) {
+        this.shotTimer = 1.6;
+        fx.playTone(329.63, 0.1, 0.08, 'triangle');
+        setTimeout(() => fx.playTone(523.25, 0.16, 0.1, 'triangle'), 450);
+        setTimeout(() => fx.playTone(783.99, 0.24, 0.1, 'sine'), 650);
+        return '🏀 SWISH! Nothing but net on the Floor 2 Basketball Arcade Hoop (+3 pts)!';
+      },
+      update(dt) {
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.004) * 0.18;
+        if (this.shotTimer > 0) {
+          this.shotTimer -= dt;
+          const t = 1 - this.shotTimer / 1.6; // 0..1
+          bball.rotation.x -= dt * 10;
+          if (t < 0.55) {
+            const p = t / 0.55;
+            bball.position.z = 0.55 * (1 - p) - 0.02 * p;
+            bball.position.y = 0.3 + Math.sin(p * Math.PI * 0.72) * 2.55;
+          } else {
+            const p = (t - 0.55) / 0.45;
+            bball.position.z = -0.02 + p * 0.57;
+            bball.position.y = Math.max(0.3, 2.25 * (1 - p) + 0.3 * p);
+          }
+        } else {
+          bball.position.set(0, 0.3 + Math.abs(Math.sin(performance.now() * 0.003)) * 0.12, 0.55);
+        }
+      },
+    };
+  }
+
+  // Floor 3 Item 2: Zen Singing Bowl & Bonsai Altar (Yoga Studio L2)
+  function createZenSingingBowl() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 0.95, 0x4ade80);
+    const stand = box(0.95, 0.58, 0.95, 0x78350f);
+    stand.position.set(0, 0.29, 0);
+    const bowl = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.18, 0.24, 18),
+      new THREE.MeshLambertMaterial({ color: 0xfbbf24, emissive: 0x451a03 })
+    );
+    bowl.position.set(-0.18, 0.7, 0.12);
+    const trunk = box(0.14, 0.52, 0.14, 0x5c3618);
+    trunk.position.set(0.22, 0.84, -0.14);
+    const leaf1 = box(0.55, 0.28, 0.55, 0x22c55e, 0x052e16);
+    leaf1.position.set(0.22, 1.15, -0.14);
+    const leaf2 = box(0.38, 0.22, 0.38, 0x4ade80, 0x064e3b);
+    leaf2.position.set(0.26, 1.36, -0.14);
+    const aura = new THREE.Mesh(
+      new THREE.TorusGeometry(0.45, 0.04, 8, 28),
+      new THREE.MeshBasicMaterial({ color: 0x86efac, transparent: true, opacity: 0.65 })
+    );
+    aura.rotation.x = Math.PI / 2;
+    aura.position.set(0, 0.9, 0);
+    root.add(stand, bowl, trunk, leaf1, leaf2, aura);
+
+    tagItem(root, 'zen_singing_bowl');
+    return {
+      id: 'zen_singing_bowl',
+      level: 3,
+      name: 'Zen Singing Bowl & Bonsai',
+      actionLabel: 'Strike Singing Bowl',
+      group: root,
+      homePos: new THREE.Vector3(52.0, 14, 13.8),
+      radius: 1.15,
+      chimeTimer: 0,
+      trigger(fx) {
+        this.chimeTimer = 3.8;
+        fx.playTone(432, 0.8, 0.09, 'sine');
+        setTimeout(() => fx.playTone(648, 0.7, 0.06, 'sine'), 180);
+        return '🪷 Resonant 432Hz Zen chime echoes peacefully across the Forest Yoga Studio!';
+      },
+      update(dt) {
+        if (this.chimeTimer > 0) {
+          this.chimeTimer -= dt;
+          const s = 1 + Math.sin(this.chimeTimer * 8) * 0.35;
+          aura.scale.set(s, s, 1);
+          aura.position.y = 0.85 + (3.8 - this.chimeTimer) * 0.22;
+          aura.material.opacity = Math.max(0.15, this.chimeTimer / 3.8);
+          bowl.material.emissive.setHex(0xb45309);
+        } else {
+          aura.scale.set(1, 1, 1);
+          aura.position.y = 0.78 + Math.sin(performance.now() * 0.002) * 0.06;
+          aura.material.opacity = 0.35;
+          bowl.material.emissive.setHex(0x451a03);
+        }
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.003) * 0.16;
+      },
+    };
+  }
+
+  // Floor 3 Item 3: Turbo Spin Bike Challenge (Spin & Turf Studio L2)
+  function createSpinBike() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.05, 0x22d3ee);
+    const base = box(0.62, 0.12, 1.35, 0x1e293b);
+    base.position.set(0, 0.06, 0);
+    const seatPost = box(0.12, 0.75, 0.12, 0x475569);
+    seatPost.position.set(0, 0.46, -0.42);
+    const seat = box(0.32, 0.12, 0.38, 0x0f172a);
+    seat.position.set(0, 0.88, -0.44);
+    const barPost = box(0.12, 0.9, 0.12, 0x475569);
+    barPost.position.set(0, 0.55, 0.38);
+    const handle = box(0.68, 0.1, 0.14, 0x22c55e, 0x052e16);
+    handle.position.set(0, 1.02, 0.38);
+    const flywheel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.34, 0.34, 0.12, 20),
+      new THREE.MeshLambertMaterial({ color: 0x38bdf8, emissive: 0x0369a1 })
+    );
+    flywheel.rotation.z = Math.PI / 2;
+    flywheel.position.set(0, 0.45, 0.42);
+    const spoke = box(0.16, 0.62, 0.08, 0xfde047);
+    flywheel.add(spoke);
+    root.add(base, seatPost, seat, barPost, handle, flywheel);
+
+    tagItem(root, 'spin_bike');
+    return {
+      id: 'spin_bike',
+      level: 3,
+      name: 'Turbo Spin Bike',
+      actionLabel: 'Pedal Sprint Interval',
+      group: root,
+      homePos: new THREE.Vector3(52.0, 14, 29.5),
+      radius: 1.2,
+      turboTimer: 0,
+      trigger(fx) {
+        this.turboTimer = 3.5;
+        fx.playTone(330, 0.1, 0.08, 'sawtooth');
+        setTimeout(() => fx.playTone(440, 0.12, 0.08, 'sawtooth'), 100);
+        setTimeout(() => fx.playTone(554.37, 0.18, 0.08, 'sawtooth'), 200);
+        return '🚴 Sprint Interval activated! Hit 120 RPM on the Forest Spin Bike!';
+      },
+      update(dt) {
+        const rpm = this.turboTimer > 0 ? 18.0 : 1.5;
+        if (this.turboTimer > 0) {
+          this.turboTimer -= dt;
+          flywheel.material.emissive.setHex(0x0284c7);
+        } else {
+          flywheel.material.emissive.setHex(0x0c4a6e);
+        }
+        flywheel.rotation.x += dt * rpm;
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.005) * 0.2;
+      },
+    };
+  }
+
+  // Floor 4 Item 2: Glowing Coral Reef Aquarium (Kelp Lounge L1)
+  function createCoralAquarium() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.2, 0x38bdf8);
+    const stand = box(1.85, 0.65, 1.05, 0x0f172a);
+    stand.position.set(0, 0.32, 0);
+    const glass = new THREE.Mesh(
+      new THREE.BoxGeometry(1.75, 1.15, 0.95),
+      new THREE.MeshLambertMaterial({ color: 0x0ea5e9, emissive: 0x082f49, transparent: true, opacity: 0.42 })
+    );
+    glass.position.set(0, 1.24, 0);
+    const cap = box(1.85, 0.14, 1.05, 0x1e293b);
+    cap.position.set(0, 1.88, 0);
+    const coral1 = box(0.28, 0.45, 0.28, 0xf43f5e, 0x881337);
+    coral1.position.set(-0.45, 0.88, 0.1);
+    const coral2 = box(0.24, 0.58, 0.24, 0xf97316, 0x7c2d12);
+    coral2.position.set(0.45, 0.94, -0.1);
+    const coral3 = box(0.32, 0.35, 0.25, 0xa855f7, 0x581c87);
+    coral3.position.set(0, 0.84, 0.15);
+
+    const fishes = [];
+    [0xfacc15, 0xfb7185, 0x34d399].forEach((c, i) => {
+      const f = box(0.26, 0.14, 0.12, c, c);
+      f.position.set((i - 1) * 0.4, 1.25 + i * 0.14, 0);
+      root.add(f);
+      fishes.push({ mesh: f, offset: i * 2.1 });
+    });
+    root.add(stand, glass, cap, coral1, coral2, coral3);
+
+    tagItem(root, 'coral_aquarium');
+    return {
+      id: 'coral_aquarium',
+      level: 4,
+      name: 'Coral Reef Aquarium',
+      actionLabel: 'Feed Tropical Fish',
+      group: root,
+      homePos: new THREE.Vector3(20.5, 20, 29.5),
+      radius: 1.35,
+      feedTimer: 0,
+      phase: 0,
+      trigger(fx) {
+        this.feedTimer = 4.0;
+        fx.playTone(523.25, 0.1, 0.07, 'sine');
+        setTimeout(() => fx.playTone(659.25, 0.12, 0.07, 'sine'), 90);
+        setTimeout(() => fx.playTone(783.99, 0.18, 0.07, 'sine'), 180);
+        return '🐠 Fed the glowing Coral Reef Aquarium! The clownfish dart excitedly!';
+      },
+      update(dt) {
+        this.phase += dt * (this.feedTimer > 0 ? 5.2 : 1.5);
+        if (this.feedTimer > 0) this.feedTimer -= dt;
+        fishes.forEach((f, idx) => {
+          const a = this.phase + f.offset;
+          f.mesh.position.x = Math.cos(a) * 0.56;
+          f.mesh.position.z = Math.sin(a) * 0.22;
+          f.mesh.position.y = 1.25 + Math.sin(a * 2 + idx) * 0.18;
+          f.mesh.rotation.y = -a + Math.PI / 2;
+        });
+        ring.material.opacity = 0.42 + Math.sin(this.phase) * 0.18;
+      },
+    };
+  }
+
+  // Floor 4 Item 3: Auto Ping-Pong Ball Cannon (Relax Corner L2)
+  function createPingPongCannon() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.0, 0xfb923c);
+    const tripod = box(0.75, 0.72, 0.75, 0x334155);
+    tripod.position.set(0, 0.36, 0);
+    const hopper = box(0.62, 0.52, 0.62, 0x0284c7);
+    hopper.position.set(0, 0.98, 0);
+    const barrel = box(0.24, 0.24, 0.78, 0x0f172a);
+    barrel.position.set(0, 0.95, 0.45);
+    barrel.rotation.x = -0.25;
+    const ball = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 14, 12),
+      new THREE.MeshLambertMaterial({ color: 0xf97316, emissive: 0x9a3412 })
+    );
+    ball.position.set(0, 1.05, 0.82);
+    root.add(tripod, hopper, barrel, ball);
+
+    tagItem(root, 'pingpong_cannon');
+    return {
+      id: 'pingpong_cannon',
+      level: 4,
+      name: 'Ping-Pong Rally Cannon',
+      actionLabel: 'Launch Practice Rally',
+      group: root,
+      homePos: new THREE.Vector3(50.0, 20, 23.5),
+      radius: 1.2,
+      fireTimer: 0,
+      trigger(fx) {
+        this.fireTimer = 2.6;
+        fx.playTone(720, 0.08, 0.09, 'sine');
+        setTimeout(() => fx.playTone(860, 0.08, 0.07, 'sine'), 240);
+        setTimeout(() => fx.playTone(720, 0.08, 0.07, 'sine'), 480);
+        return '🏓 Ping-Pong Cannon fires rapid practice topspin shots across the Relax Corner!';
+      },
+      update(dt) {
+        if (this.fireTimer > 0) {
+          this.fireTimer -= dt;
+          const cyc = ((2.6 - this.fireTimer) * 2.2) % 1;
+          ball.position.z = 0.7 + cyc * 2.4;
+          ball.position.y = 0.4 + Math.abs(Math.sin(cyc * Math.PI * 2)) * 0.95;
+          root.rotation.y = Math.sin(this.fireTimer * 3) * 0.35;
+        } else {
+          ball.position.set(0, 1.05, 0.82);
+          root.rotation.y += dt * 0.35;
+        }
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.004) * 0.18;
+      },
+    };
+  }
+
+  // Floor 5 Item 2: Heavy Punching Bag & Gym Bell (Main Gym Rig L2)
+  function createPunchingBag() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.15, 0xef4444);
+    const frame = box(0.24, 2.75, 0.24, 0x334155);
+    frame.position.set(-0.85, 1.38, 0);
+    const arm = box(1.15, 0.22, 0.24, 0x475569);
+    arm.position.set(-0.35, 2.68, 0);
+    const bell = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.22, 0.22, 0.1, 18),
+      new THREE.MeshLambertMaterial({ color: 0xfacc15, emissive: 0x713f12 })
+    );
+    bell.rotation.z = Math.PI / 2;
+    bell.position.set(-0.7, 1.9, 0.16);
+
+    const bagPivot = new THREE.Group();
+    bagPivot.position.set(0.1, 2.58, 0);
+    const chain = box(0.08, 0.5, 0.08, 0x94a3b8);
+    chain.position.set(0, -0.25, 0);
+    const bag = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.32, 0.32, 1.35, 16),
+      new THREE.MeshLambertMaterial({ color: 0xdc2626, emissive: 0x450a0a })
+    );
+    bag.position.set(0, -1.15, 0);
+    bag.castShadow = true;
+    const stripe = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.33, 0.33, 0.18, 16),
+      new THREE.MeshLambertMaterial({ color: 0xf8fafc })
+    );
+    stripe.position.set(0, -0.85, 0);
+    bagPivot.add(chain, bag, stripe);
+    root.add(frame, arm, bell, bagPivot);
+
+    tagItem(root, 'punching_bag');
+    return {
+      id: 'punching_bag',
+      level: 5,
+      name: 'Heavy Punching Bag & Bell',
+      actionLabel: 'Throw Power Combo',
+      group: root,
+      homePos: new THREE.Vector3(47.0, 26, 20.0),
+      radius: 1.35,
+      swingAmp: 0,
+      phase: 0,
+      trigger(fx) {
+        this.swingAmp = 0.72;
+        this.phase = 0;
+        fx.playTone(110, 0.12, 0.14, 'triangle');
+        setTimeout(() => fx.playTone(987.77, 0.45, 0.08, 'sine'), 140);
+        return '🥊 POW! DING-DING! You hammered the Heavy Bag and rang the Gym Round Bell!';
+      },
+      update(dt) {
+        if (this.swingAmp > 0.02) {
+          this.phase += dt * 7.5;
+          this.swingAmp *= Math.pow(0.42, dt);
+          bagPivot.rotation.z = Math.sin(this.phase) * this.swingAmp;
+          bagPivot.rotation.x = Math.cos(this.phase * 0.7) * this.swingAmp * 0.4;
+        } else {
+          bagPivot.rotation.z = Math.sin(performance.now() * 0.0018) * 0.04;
+          bagPivot.rotation.x = 0;
+        }
+        ring.material.opacity = 0.4 + Math.sin(performance.now() * 0.004) * 0.18;
+      },
+    };
+  }
+
+  // Floor 5 Item 3: Industrial Synth Jukebox (Loft Co-Work L1)
+  function createEspressoJukebox() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.05, 0xf87171);
+    const body = box(1.1, 1.65, 0.72, 0x1e293b);
+    body.position.set(0, 0.82, 0);
+    const trim = box(1.18, 0.18, 0.78, 0xf59e0b, 0x451a03);
+    trim.position.set(0, 1.66, 0);
+    const grille = box(0.84, 0.56, 0.08, 0x334155);
+    grille.position.set(0, 0.45, 0.35);
+
+    const bars = [];
+    const barColors = [0xef4444, 0xf97316, 0xfacc15, 0x22c55e, 0x38bdf8];
+    barColors.forEach((c, i) => {
+      const b = box(0.12, 0.45, 0.08, c, c);
+      b.position.set((i - 2) * 0.17, 1.22, 0.36);
+      root.add(b);
+      bars.push(b);
+    });
+    const vinyl = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 0.04, 20),
+      new THREE.MeshLambertMaterial({ color: 0x0f172a })
+    );
+    vinyl.position.set(0, 1.78, 0);
+    root.add(body, trim, grille, vinyl);
+
+    tagItem(root, 'espresso_jukebox');
+    return {
+      id: 'espresso_jukebox',
+      level: 5,
+      name: 'Industrial Synth Jukebox',
+      actionLabel: 'Drop Loft Beat',
+      group: root,
+      homePos: new THREE.Vector3(10.5, 26, 27.5),
+      radius: 1.2,
+      playTimer: 0,
+      phase: 0,
+      trigger(fx) {
+        this.playTimer = 4.2;
+        const notes = [261.63, 329.63, 392.0, 523.25, 392.0, 659.25];
+        notes.forEach((n, idx) => {
+          setTimeout(() => fx.playTone(n, 0.14, 0.08, 'square'), idx * 120);
+        });
+        return '🎵 The Industrial Synth Jukebox drops an energetic Loft chill-wave beat!';
+      },
+      update(dt) {
+        this.phase += dt * (this.playTimer > 0 ? 11.0 : 2.5);
+        if (this.playTimer > 0) this.playTimer -= dt;
+        vinyl.rotation.y += dt * (this.playTimer > 0 ? 6.5 : 0.8);
+        bars.forEach((b, i) => {
+          const amp = this.playTimer > 0 ? (0.45 + Math.abs(Math.sin(this.phase + i * 0.9)) * 1.15) : (0.35 + Math.abs(Math.sin(this.phase + i)) * 0.25);
+          b.scale.y = amp;
+        });
+        ring.material.opacity = 0.4 + Math.sin(this.phase * 0.5) * 0.18;
+      },
+    };
+  }
+
+  // Floor 6 Item 2: Holographic City Flight Radar (City Map Sky Lounge L1)
+  function createFlightRadar() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.15, 0xfb923c);
+    const consoleBase = box(1.5, 0.78, 1.5, 0x1e293b);
+    consoleBase.position.set(0, 0.39, 0);
+    const mapPlate = box(1.32, 0.08, 1.32, 0x0c4a6e, 0x082f49);
+    mapPlate.position.set(0, 0.82, 0);
+
+    // Mini glowing skyline towers
+    const b1 = box(0.18, 0.45, 0.18, 0xfb923c, 0x9a3412);
+    b1.position.set(-0.32, 1.06, -0.2);
+    const b2 = box(0.22, 0.65, 0.22, 0xfacc15, 0x854d0e);
+    b2.position.set(0.25, 1.16, 0.18);
+    const b3 = box(0.16, 0.36, 0.16, 0x38bdf8, 0x075985);
+    b3.position.set(-0.18, 1.0, 0.35);
+
+    const radarDish = box(1.18, 0.06, 0.08, 0x38bdf8, 0x0284c7);
+    radarDish.position.set(0, 0.9, 0);
+    root.add(consoleBase, mapPlate, b1, b2, b3, radarDish);
+
+    tagItem(root, 'flight_radar');
+    return {
+      id: 'flight_radar',
+      level: 6,
+      name: 'City Flight Radar',
+      actionLabel: 'Scan Campus Airspace',
+      group: root,
+      homePos: new THREE.Vector3(9.5, 32, 27.5),
+      radius: 1.35,
+      scanTimer: 0,
+      trigger(fx) {
+        this.scanTimer = 3.8;
+        fx.playTone(1046.5, 0.09, 0.07, 'sine');
+        setTimeout(() => fx.playTone(1318.5, 0.14, 0.07, 'sine'), 160);
+        return '📡 City Flight Radar sweeps Penang airspace — Virtual Intel Campus telemetry nominal!';
+      },
+      update(dt) {
+        const speed = this.scanTimer > 0 ? 7.5 : 1.4;
+        if (this.scanTimer > 0) this.scanTimer -= dt;
+        radarDish.rotation.y += dt * speed;
+        ring.material.opacity = 0.42 + Math.sin(performance.now() * 0.005) * 0.2;
+      },
+    };
+  }
+
+  // Floor 6 Item 3: Interactive 3D Terrain Sandtable (Terrain Map Sky Lounge L2)
+  function createTerrainSandtable() {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.2, 0x4ade80);
+    const table = box(1.75, 0.72, 1.35, 0x334155);
+    table.position.set(0, 0.36, 0);
+    const frame = box(1.82, 0.1, 1.42, 0xf59e0b, 0x451a03);
+    frame.position.set(0, 0.75, 0);
+
+    const hills = [];
+    [
+      [-0.45, 0.36, -0.25, 0x22c55e],
+      [0.0, 0.62, 0.0, 0x16a34a],
+      [0.45, 0.44, 0.2, 0x4ade80],
+      [-0.2, 0.28, 0.32, 0x0ea5e9],
+    ].forEach(([hx, hh, hz, hc]) => {
+      const m = box(0.42, hh, 0.42, hc, 0x052e16);
+      m.position.set(hx, 0.8 + hh / 2, hz);
+      root.add(m);
+      hills.push({ mesh: m, baseY: 0.8 + hh / 2 });
+    });
+
+    const beacon = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.18, 0),
+      new THREE.MeshLambertMaterial({ color: 0xfde047, emissive: 0xca8a04 })
+    );
+    beacon.position.set(0, 1.78, 0);
+    root.add(table, frame, beacon);
+
+    tagItem(root, 'terrain_sandtable');
+    return {
+      id: 'terrain_sandtable',
+      level: 6,
+      name: '3D Terrain Sandtable',
+      actionLabel: 'Pulse Topo Elevation',
+      group: root,
+      homePos: new THREE.Vector3(53.5, 32, 20.5),
+      radius: 1.35,
+      waveTimer: 0,
+      phase: 0,
+      trigger(fx) {
+        this.waveTimer = 3.8;
+        fx.playTone(392, 0.14, 0.08, 'triangle');
+        setTimeout(() => fx.playTone(587.33, 0.18, 0.08, 'triangle'), 120);
+        return '🗺️ 3D Topographic Terrain Sandtable illuminates elevation contours across the Sky Lounge!';
+      },
+      update(dt) {
+        this.phase += dt * (this.waveTimer > 0 ? 7.0 : 2.0);
+        if (this.waveTimer > 0) this.waveTimer -= dt;
+        const amp = this.waveTimer > 0 ? 0.22 : 0.04;
+        hills.forEach((h, i) => {
+          h.mesh.position.y = h.baseY + Math.sin(this.phase + i * 1.1) * amp;
+        });
+        beacon.rotation.y += dt * (this.waveTimer > 0 ? 5.0 : 1.5);
+        beacon.position.y = 1.78 + Math.sin(this.phase) * 0.12;
+        ring.material.opacity = 0.42 + Math.sin(this.phase) * 0.18;
+      },
+    };
+  }
+
   // HD Intel Logo Plaque + Floor Medallion for Every Floor (F1-F6)
   function createIntelFloorTextures(lvl) {
     // 1. Wall Architectural Sign (1024x320)
@@ -623,12 +1329,30 @@
     constructor(scene, levels = []) {
       this.scene = scene;
       this.items = [
+        // Floor 1 (3 Interactive Items)
         createTrojanHorse(),
+        createCheckinKiosk(),
+        createDronePad(),
+        // Floor 2 (3 Interactive Items)
         createSportsBall(),
+        createSprintTimer(),
+        createArcadeHoop(),
+        // Floor 3 (3 Interactive Items)
         createTeddyBear(),
+        createZenSingingBowl(),
+        createSpinBike(),
+        // Floor 4 (3 Interactive Items)
         createOceanDolphin(),
+        createCoralAquarium(),
+        createPingPongCannon(),
+        // Floor 5 (3 Interactive Items)
         createMichelangeloStatue(),
+        createPunchingBag(),
+        createEspressoJukebox(),
+        // Floor 6 (3 Interactive Items)
         createWorldGlobe(),
+        createFlightRadar(),
+        createTerrainSandtable(),
       ];
       for (const item of this.items) {
         item.group.position.copy(item.homePos);
@@ -667,6 +1391,10 @@
 
     findById(id) {
       return this.items.find((it) => it.id === id) || null;
+    }
+
+    getByLevel(level) {
+      return this.items.filter((it) => it.level === level);
     }
 
     getNearestItem(pos, maxDist = 3.8) {

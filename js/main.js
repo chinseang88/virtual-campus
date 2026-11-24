@@ -1041,7 +1041,33 @@
       const currentStanding = world.getFloorAtY(playerPos.y);
       const activeView = cameraMode !== 2 ? viewedFloorObj : currentStanding;
 
-      floorLandmarkEl.textContent = `Floor ${activeView.level} Item: ${activeView.uniqueItem}`;
+      const floorItems = itemManager.getByLevel(activeView.level);
+      floorLandmarkEl.innerHTML = '';
+      const hdr = document.createElement('span');
+      hdr.textContent = `F${activeView.level} Items (${floorItems.length}):`;
+      floorLandmarkEl.appendChild(hdr);
+      floorItems.forEach((it) => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'floor-item-chip';
+        chip.textContent = `✨ ${it.name}`;
+        chip.title = `Go to / interact with ${it.name} (${it.actionLabel})`;
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (Math.abs(it.group.position.y - playerPos.y) > 2.5) {
+            if (!teleportToFloor(activeView, false)) return;
+          }
+          const d = Math.hypot(it.group.position.x - playerPos.x, it.group.position.z - playerPos.z);
+          if (d < 3.6) {
+            triggerItem(it);
+          } else {
+            const ok = setSmartWalkTarget(it.group.position.x, it.group.position.z);
+            if (ok) showToast(`🧭 Walking to ${it.name} — click or press [E] to ${it.actionLabel}!`, false);
+            else triggerItem(it);
+          }
+        });
+        floorLandmarkEl.appendChild(chip);
+      });
 
       floorBtnsEl.innerHTML = '';
       [...PG17_LEVELS].reverse().forEach((lvl) => {
