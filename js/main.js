@@ -183,6 +183,11 @@
     walkTargetRing.visible = false;
     scene.add(walkTargetRing);
 
+    const walkPathMat = new THREE.LineBasicMaterial({ color: 0x4ade80, transparent: true, opacity: 0.75 });
+    const walkPathLine = new THREE.Line(new THREE.BufferGeometry(), walkPathMat);
+    walkPathLine.visible = false;
+    scene.add(walkPathLine);
+
     // Particles
     const particles = [];
     const partGeo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
@@ -255,8 +260,35 @@
     let drawerOpen = false;
     let lastDeniedAt = 0;
     let walkTarget = null;
+    let walkPath = [];
+    let walkStuckTimer = 0;
+    let walkLastX = 28.0;
+    let walkLastZ = 26.0;
     let hoveredItem = null;
     let hoveredNpc = null;
+
+    function clearWalkPath() {
+      walkTarget = null;
+      walkPath = [];
+      walkStuckTimer = 0;
+      walkPathLine.visible = false;
+    }
+
+    function setSmartWalkTarget(tx, tz) {
+      const floorNow = world.getFloorAtY(playerPos.y);
+      const path = crowd.findPathForPlayer(floorNow.level, playerPos.x, playerPos.z, tx, tz);
+      if (path.length === 0) {
+        clearWalkPath();
+        showToast('🚫 Path blocked — try clicking inside an open room or doorway.', true);
+        return false;
+      }
+      walkPath = path;
+      walkTarget = path[path.length - 1];
+      walkStuckTimer = 0;
+      walkLastX = playerPos.x;
+      walkLastZ = playerPos.z;
+      return true;
+    }
 
     const smoothCamPos = new THREE.Vector3(28.0, 12.5, 39.5);
     const smoothLookAt = new THREE.Vector3(28.0, 2.8, 26.0);
@@ -364,7 +396,7 @@
       sfx.ensure();
       sfx.blip();
       activeDialogNpc = npc;
-      walkTarget = null;
+      clearWalkPath();
       crowd.facePlayer(npc, playerPos);
       pkmnSpeakerEl.textContent = `${npc.name} • Floor ${npc.level} (${npc.role})`;
       pkmnChoicesEl.style.display = 'flex';
@@ -379,7 +411,7 @@
       sfx.ensure();
       sfx.blip();
       activeDialogNpc = null;
-      walkTarget = null;
+      clearWalkPath();
       pkmnSpeakerEl.textContent = title;
       pkmnChoicesEl.style.display = 'none';
       pkmnDialogEl.classList.add('open');
@@ -519,7 +551,7 @@
       }
       closeDialog();
       viewedFloorObj = floorObj;
-      walkTarget = null;
+      clearWalkPath();
       playerPos.set(34.0, floorObj.standY, 13.0);
       playerVel.set(0, 0, 0);
       yaw = Math.PI;
@@ -537,12 +569,13 @@
       const user = roster.getActiveUser();
       const maxFloor = world.getMaxAllowedFloorObj(user.level);
       world.applyAccessLevel(maxFloor.level);
+      crowd.rebuildNav();
       rebuildLocalAvatar(user);
       crowd.syncUsers(roster.users, user.name);
 
       if (teleportToAssigned || playerPos.y > maxFloor.standY + 2) {
         viewedFloorObj = maxFloor;
-        walkTarget = null;
+        clearWalkPath();
         playerPos.set(34.0, maxFloor.standY, 13.0);
         playerVel.set(0, 0, 0);
         yaw = Math.PI;
@@ -734,7 +767,7 @@
         btn.addEventListener('click', (e) => { e.stopPropagation(); performPrimaryAction(); });
         return;
       }
-      const down = (e) => { e.stopPropagation(); dpadState[dir] = true; walkTarget = null; };
+      const down = (e) => { e.stopPropagation(); dpadState[dir] = true; clearWalkPath(); };
       const up = () => { dpadState[dir] = false; };
       btn.addEventListener('mousedown', down);
       btn.addEventListener('touchstart', down, { passive: true });
@@ -839,7 +872,7 @@
     function cycleCameraMode() {
       cameraMode = (cameraMode + 1) % 3;
       if (cameraMode === 2) {
-        walkTarget = null;
+        clearWalkPath();
         localAvatar.group.visible = false;
         sliceFloors = false;
       } else {
@@ -947,16 +980,15 @@
           }
         }
 
-        // 3. Clicked on floor in Pokemon / Top-Down view? Walk there!
+        // 3. Clicked on floor in Campus 3/4 / Top-Down view? Route intelligently around walls & furniture!
         if (cameraMode !== 2) {
           if (isDialogOpen()) closeDialog();
           const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -viewedFloorObj.standY);
           const hitPt = new THREE.Vector3();
           if (raycaster.ray.intersectPlane(floorPlane, hitPt)) {
-            walkTarget = {
-              x: Math.max(2.5, Math.min(world.w - 2.5, hitPt.x)),
-              z: Math.max(2.5, Math.min(world.d - 2.5, hitPt.z)),
-            };
+            const tx = Math.max(2.2, Math.min(world.w - 2.2, hitPt.x));
+            const tz = Math.max(2.2, Math.min(world.d - 2.2, hitPt.z));
+            setSmartWalkTarget(tx, tz);
           }
         }
       }
@@ -1076,19 +1108,43 @@
           if (keys['KeyD'] || keys['ArrowRight'] || dpadState.right) { mx += rightX;   mz += rightZ;   keyInput = true; }
         }
         if (keyInput) {
-          walkTarget = null;
+          clearWalkPath();
           if (isDialogOpen()) closeDialog();
         }
 
-        if (walkTarget) {
-          const dx = walkTarget.x - playerPos.x;
-          const dz = walkTarget.z - playerPos.z;
+        if (walkPath.length > 0) {
+          const wp = walkPath[0];
+          const dx = wp.x - playerPos.x;
+          const dz = wp.z - playerPos.z;
           const dist = Math.hypot(dx, dz);
-          if (dist < 0.35) {
-            walkTarget = null;
+          if (dist < 0.42) {
+            walkPath.shift();
+            if (walkPath.length === 0) {
+              clearWalkPath();
+            } else {
+              const nxt = walkPath[0];
+              const nd = Math.hypot(nxt.x - playerPos.x, nxt.z - playerPos.z) || 1;
+              mx = (nxt.x - playerPos.x) / nd;
+              mz = (nxt.z - playerPos.z) / nd;
+            }
           } else {
             mx = dx / dist;
             mz = dz / dist;
+          }
+
+          // Re-route cleanly if bumped against an edge
+          walkStuckTimer += dt;
+          if (walkStuckTimer > 0.6) {
+            const moved = Math.hypot(playerPos.x - walkLastX, playerPos.z - walkLastZ);
+            walkLastX = playerPos.x;
+            walkLastZ = playerPos.z;
+            walkStuckTimer = 0;
+            if (moved < 0.12 && walkTarget) {
+              const floorNow = world.getFloorAtY(playerPos.y);
+              const reroute = crowd.findPathForPlayer(floorNow.level, playerPos.x, playerPos.z, walkTarget.x, walkTarget.z);
+              if (reroute.length > 0) walkPath = reroute;
+              else clearWalkPath();
+            }
           }
         }
 
@@ -1124,7 +1180,7 @@
             if (!inX || !inZ) continue;
 
             if (locked) {
-              walkTarget = null;
+              clearWalkPath();
               if (now - lastDeniedAt > 1400) {
                 lastDeniedAt = now;
                 sfx.denied();
@@ -1135,7 +1191,7 @@
               playerPos.set(sz.spawnX, sz.spawnY, sz.spawnZ);
               playerVel.set(0, 0, 0);
               yaw = sz.spawnYaw;
-              walkTarget = null;
+              clearWalkPath();
               stairCooldown = 0.85;
               const destFl = world.getFloorAtY(playerPos.y);
               viewedFloorObj = destFl;
@@ -1159,7 +1215,7 @@
           playerPos.y = Math.min(prevY, maxAllowedFloor.standY);
           playerPos.z = prevZ;
           playerVel.y = 0;
-          walkTarget = null;
+          clearWalkPath();
           if (now - lastDeniedAt > 1400) {
             lastDeniedAt = now;
             sfx.denied();
@@ -1258,13 +1314,22 @@
         cursorRing.visible = false;
       }
 
-      if (walkTarget) {
+      if (walkTarget && walkPath.length > 0) {
         walkTargetRing.visible = true;
         walkTargetRing.position.set(walkTarget.x, playerPos.y + 0.05, walkTarget.z);
         const s = 0.85 + Math.sin(now * 0.008) * 0.2;
         walkTargetRing.scale.set(s, s, 1);
+
+        const pts = [new THREE.Vector3(playerPos.x, playerPos.y + 0.08, playerPos.z)];
+        for (const wp of walkPath) {
+          pts.push(new THREE.Vector3(wp.x, playerPos.y + 0.08, wp.z));
+        }
+        walkPathLine.geometry.dispose();
+        walkPathLine.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+        walkPathLine.visible = true;
       } else {
         walkTargetRing.visible = false;
+        walkPathLine.visible = false;
       }
 
       // Prompt pill for hovered or nearby NPC / Unique Item

@@ -400,8 +400,14 @@
       this.cells = [];
       const fy = this.floorObj.floorY;
       const sy = this.floorObj.standY;
-      for (let z = 7; z <= 33; z++) {
-        for (let x = 5; x <= 62; x++) {
+      const isF1 = this.floorObj.level === 1;
+      const minX = isF1 ? 2 : 5;
+      const maxX = isF1 ? 65 : 62;
+      const minZ = isF1 ? 2 : 7;
+      const maxZ = isF1 ? 40 : 33;
+
+      for (let z = minZ; z <= maxZ; z++) {
+        for (let x = minX; x <= maxX; x++) {
           const floorBlk = this.world.get(x, fy, z);
           const fInfo = BLOCK_INFO[floorBlk];
           const okFloor = fInfo && fInfo.solid;
@@ -415,6 +421,22 @@
           }
         }
       }
+
+      // Ensure unlocked stair entrances & down-stair landings are routable
+      if (this.world.getStairZones) {
+        for (const sz of this.world.getStairZones()) {
+          if (sz.fromLevel !== this.floorObj.level) continue;
+          const locked = sz.dir === 'up' && sz.toLevel > this.world.maxAllowedLevel;
+          if (locked) continue;
+          for (let z = Math.floor(sz.minZ); z <= Math.ceil(sz.maxZ); z++) {
+            for (let x = Math.floor(sz.minX); x <= Math.ceil(sz.maxX); x++) {
+              if (x >= 0 && x < this.w && z >= 0 && z < this.d) {
+                this.walkable[z * this.w + x] = 1;
+              }
+            }
+          }
+        }
+      }
     }
 
     isWalkable(x, z) {
@@ -422,6 +444,127 @@
       const iz = Math.floor(z);
       if (ix < 0 || ix >= this.w || iz < 0 || iz >= this.d) return false;
       return this.walkable[iz * this.w + ix] === 1;
+    }
+
+    findNearestWalkable(gx, gz, maxRadius = 7) {
+      const x0 = Math.max(0, Math.min(this.w - 1, Math.floor(gx)));
+      const z0 = Math.max(0, Math.min(this.d - 1, Math.floor(gz)));
+      if (this.walkable[z0 * this.w + x0] === 1) return { x: x0, z: z0 };
+
+      let best = null;
+      let bestDistSq = Infinity;
+      for (let r = 1; r <= maxRadius; r++) {
+        for (let dz = -r; dz <= r; dz++) {
+          for (let dx = -r; dx <= r; dx++) {
+            const nx = x0 + dx;
+            const nz = z0 + dz;
+            if (nx < 0 || nx >= this.w || nz < 0 || nz >= this.d) continue;
+            if (this.walkable[nz * this.w + nx] !== 1) continue;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < bestDistSq) {
+              bestDistSq = d2;
+              best = { x: nx, z: nz };
+            }
+          }
+        }
+        if (best) return best;
+      }
+      return null;
+    }
+
+    hasClearLine(x0, z0, x1, z1) {
+      const dist = Math.hypot(x1 - x0, z1 - z0);
+      const steps = Math.ceil(dist * 4);
+      const pad = 0.26;
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        const px = x0 + (x1 - x0) * t;
+        const pz = z0 + (z1 - z0) * t;
+        if (
+          !this.isWalkable(px - pad, pz - pad) ||
+          !this.isWalkable(px + pad, pz - pad) ||
+          !this.isWalkable(px - pad, pz + pad) ||
+          !this.isWalkable(px + pad, pz + pad)
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    findPlayerPath(sx, sz, gx, gz) {
+      const start = this.findNearestWalkable(sx, sz, 4);
+      const goal = this.findNearestWalkable(gx, gz, 8);
+      if (!start || !goal) return [];
+      if (start.x === goal.x && start.z === goal.z) {
+        return [{ x: goal.x + 0.5, z: goal.z + 0.5 }];
+      }
+
+      const total = this.w * this.d;
+      const parent = new Int32Array(total).fill(-1);
+      const visited = new Uint8Array(total);
+      const startIdx = start.z * this.w + start.x;
+      const goalIdx = goal.z * this.w + goal.x;
+      const queue = [startIdx];
+      visited[startIdx] = 1;
+      let found = false;
+      const dirs8 = [
+        [1, 0], [-1, 0], [0, 1], [0, -1],
+        [1, 1], [1, -1], [-1, 1], [-1, -1],
+      ];
+      let head = 0;
+
+      while (head < queue.length) {
+        const cur = queue[head++];
+        if (cur === goalIdx) { found = true; break; }
+        const cx = cur % this.w;
+        const cz = (cur / this.w) | 0;
+        for (let i = 0; i < 8; i++) {
+          const [dx, dz] = dirs8[i];
+          const nx = cx + dx;
+          const nz = cz + dz;
+          if (nx < 0 || nx >= this.w || nz < 0 || nz >= this.d) continue;
+          const nxt = nz * this.w + nx;
+          if (visited[nxt] || !this.walkable[nxt]) continue;
+          // Prevent corner cutting on diagonal moves
+          if (dx !== 0 && dz !== 0) {
+            if (!this.walkable[cz * this.w + nx] || !this.walkable[nz * this.w + cx]) continue;
+          }
+          visited[nxt] = 1;
+          parent[nxt] = cur;
+          queue.push(nxt);
+        }
+      }
+
+      if (!found) return [];
+      const raw = [];
+      let cur = goalIdx;
+      while (cur !== -1 && cur !== startIdx) {
+        raw.push({ x: (cur % this.w) + 0.5, z: ((cur / this.w) | 0) + 0.5 });
+        cur = parent[cur];
+      }
+      raw.reverse();
+      if (raw.length <= 2) return raw;
+
+      // Line-of-sight string-pulling smoothing for natural movement
+      const smoothed = [];
+      let anchorX = sx;
+      let anchorZ = sz;
+      let idx = 0;
+      while (idx < raw.length) {
+        let farthest = idx;
+        for (let j = raw.length - 1; j > idx; j--) {
+          if (this.hasClearLine(anchorX, anchorZ, raw[j].x, raw[j].z)) {
+            farthest = j;
+            break;
+          }
+        }
+        smoothed.push(raw[farthest]);
+        anchorX = raw[farthest].x;
+        anchorZ = raw[farthest].z;
+        idx = farthest + 1;
+      }
+      return smoothed;
     }
 
     findPath(sx, sz, gx, gz) {
@@ -492,6 +635,12 @@
 
     rebuildNav() {
       for (const nav of this.navByLevel.values()) nav.rebuild();
+    }
+
+    findPathForPlayer(floorLevel, sx, sz, gx, gz) {
+      const nav = this.navByLevel.get(floorLevel);
+      if (!nav) return [];
+      return nav.findPlayerPath(sx, sz, gx, gz);
     }
 
     syncUsers(users, activeUserName) {
