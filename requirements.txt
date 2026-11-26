@@ -1,0 +1,1 @@
+# Virtual Intel Campus uses Python 3 standard library only (zero external pip dependencies).
