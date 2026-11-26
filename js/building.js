@@ -288,31 +288,31 @@
       // Clear interior volume
       this.fill(5, y0 + 1, 7, 62, yTop, 33, BLOCKS.AIR);
 
-      // Perimeter curtain walls (floor-to-ceiling glass + concrete pillars every 6 blocks)
+      // Perimeter curtain walls: crystal-clear open-office glass with corner & rear structural mullions
       for (let x = 4; x <= 63; x++) {
-        const isCol = (x - 4) % 6 === 0 || x === 63;
+        const isCorner = x === 4 || x === 63;
+        const isNorthMullion = x === 26 || x === 41;
         for (let y = y0 + 1; y <= yTop; y++) {
-          const blk = isCol ? BLOCKS.CONCRETE : BLOCKS.GLASS;
-          this.set(x, y, 6, blk);
-          this.set(x, y, 34, blk);
+          this.set(x, y, 6, (isCorner || isNorthMullion) ? BLOCKS.CONCRETE : BLOCKS.GLASS);
+          this.set(x, y, 34, isCorner ? BLOCKS.CONCRETE : BLOCKS.GLASS);
         }
       }
       for (let z = 6; z <= 34; z++) {
-        const isCol = (z - 6) % 7 === 0 || z === 34;
+        const isCorner = z === 6 || z === 34;
         for (let y = y0 + 1; y <= yTop; y++) {
-          const blk = isCol ? BLOCKS.CONCRETE : BLOCKS.GLASS;
+          const blk = isCorner ? BLOCKS.CONCRETE : BLOCKS.GLASS;
           this.set(4, y, z, blk);
           this.set(63, y, z, blk);
         }
       }
 
-      // Internal zone dividers separating L1 | LL | L2 (with wide 5-block walkways at North & South)
+      // Open-office low glass partitions separating L1 | LL | L2 (waist-high glass rail, wide open sightlines!)
       for (let z = 7; z <= 33; z++) {
-        const inNorthDoor = z >= 10 && z <= 14;
-        const inSouthDoor = z >= 27 && z <= 31;
+        const inNorthDoor = z >= 10 && z <= 15;
+        const inSouthDoor = z >= 26 && z <= 31;
         if (!inNorthDoor && !inSouthDoor) {
-          this.fill(26, y0 + 1, z, 26, yTop, z, z % 3 === 0 ? BLOCKS.CONCRETE : BLOCKS.GLASS);
-          this.fill(41, y0 + 1, z, 41, yTop, z, z % 3 === 0 ? BLOCKS.CONCRETE : BLOCKS.GLASS);
+          this.set(26, y0 + 1, z, BLOCKS.GLASS);
+          this.set(41, y0 + 1, z, BLOCKS.GLASS);
         }
       }
 
@@ -394,21 +394,19 @@
       this.set(cx + 2, y, cz + 1, chairBlk);
     }
 
-    // Helper: pantry counter + coffee machines
+    // Helper: open-concept pantry counter + coffee machines (low height for clear sightlines)
     placePantry(x1, x2, zWall, y, cabBlk, backsplashBlk) {
       const zFront = zWall === 7 ? 8 : zWall - 1;
-      this.fill(x1, y, zWall, x2, y + 3, zWall, backsplashBlk);
+      this.fill(x1, y, zWall, x2, y + 1, zWall, backsplashBlk);
       this.fill(x1, y, zFront, x2, y, zFront, cabBlk);
       // Twin espresso / coffee machines on counter
       for (let x = x1 + 1; x <= x2 - 1; x += 3) {
         this.set(x, y + 1, zFront, BLOCKS.COFFEE_BAR);
       }
-      // Upper cabinets
-      this.fill(x1, y + 2, zWall, x2, y + 3, zWall, cabBlk);
     }
 
     // =========================================================================
-    // LEVEL 1: Main Lobby (ML)
+    // LEVEL 1: Main Lobby (ML) — Open Atrium & Check-In
     // =========================================================================
     buildLevel1Lobby(lvl) {
       const y = lvl.standY;
@@ -416,16 +414,16 @@
       this.fill(5, lvl.floorY, 7, 62, lvl.floorY, 33, BLOCKS.MARBLE);
       // Grand South entrance opening (x=30..37, z=34)
       this.fill(30, y, 34, 37, y + 3, 34, BLOCKS.AIR);
-      this.fill(29, y, 34, 29, y + 3, 34, BLOCKS.GOLD_TRIM);
-      this.fill(38, y, 34, 38, y + 3, 34, BLOCKS.GOLD_TRIM);
+      this.fill(29, y, 34, 29, y + 1, 34, BLOCKS.GOLD_TRIM);
+      this.fill(38, y, 34, 38, y + 1, 34, BLOCKS.GOLD_TRIM);
 
-      // ML Reception & Security Zone (Center & East ML)
+      // ML Reception & Security Zone (Center & East ML, open sightlines)
       this.fill(44, y, 22, 54, y, 23, BLOCKS.DARK_WOOD);
       this.fill(44, y + 1, 22, 54, y + 1, 22, BLOCKS.WHITE_DESK);
-      this.fill(46, y, 16, 52, y + 3, 16, BLOCKS.TEAL_WALL); // Intel Welcome Feature Wall
-      this.fill(47, y + 1, 17, 51, y + 2, 17, BLOCKS.LED_LIGHT);
+      this.fill(46, y, 16, 52, y + 1, 16, BLOCKS.TEAL_WALL); // Open Intel Welcome Counter
+      this.fill(47, y + 1, 17, 51, y + 1, 17, BLOCKS.LED_LIGHT);
 
-      // Visitor Lounge in West Wing (L1) — keep center (14..17, 19..22) clear for Trojan Horse!
+      // Visitor Lounge & Open Co-Work in West Wing (L1) — keep (14..17, 19..22) clear for Trojan Horse!
       this.fill(7, y, 10, 10, y, 11, BLOCKS.NAVY_BOOTH);
       this.fill(7, y, 14, 10, y, 15, BLOCKS.NAVY_BOOTH);
       this.placeCafeTable(9, y, 26, BLOCKS.WHITE_DESK, BLOCKS.NAVY_BOOTH);
@@ -435,9 +433,9 @@
       this.set(61, y, 8, BLOCKS.PLANT);
       this.set(61, y, 32, BLOCKS.PLANT);
 
-      // Turnstile / Badge Scanner Gate line in LL
+      // Sleek glass turnstile gates in LL
       for (let x = 27; x <= 40; x += 3) {
-        this.set(x, y, 29, BLOCKS.CONCRETE);
+        this.set(x, y, 29, BLOCKS.GLASS);
       }
 
       this.addPOI('Floor 1 Main Lobby (ML)', 34, y, 30, 1);
@@ -446,7 +444,7 @@
     }
 
     // =========================================================================
-    // FLOOR 2: Sports Theme (L1 Track/Blue Court + LL + L2 Green Turf Pitch)
+    // FLOOR 2: Sports Theme (Open Track, Blue Court & Turf Pitch)
     // =========================================================================
     buildLevel4Sports(lvl) {
       const y = lvl.standY;
@@ -465,15 +463,14 @@
       this.fill(27, lvl.floorY, 9, 40, lvl.floorY, 33, BLOCKS.CHARCOAL_FLOOR);
       this.fill(27, lvl.floorY, 27, 40, lvl.floorY, 31, BLOCKS.TRACK);
 
-      // L2 East: Green Turf Pitch (center kept open for kicking the Sports Ball!)
+      // L2 East: Open Green Turf Pitch
       this.fill(42, lvl.floorY, 7, 62, lvl.floorY, 33, BLOCKS.TURF);
       this.fill(42, yCeil, 7, 62, yCeil, 33, BLOCKS.DARK_CEILING);
       this.fill(46, yCeil, 11, 58, yCeil, 11, BLOCKS.LED_LIGHT);
       this.fill(46, yCeil, 28, 58, yCeil, 28, BLOCKS.LED_LIGHT);
       this.fill(46, yCeil, 11, 46, yCeil, 28, BLOCKS.LED_LIGHT);
       this.fill(58, yCeil, 11, 58, yCeil, 28, BLOCKS.LED_LIGHT);
-      this.fill(43, y, 7, 61, y + 3, 7, BLOCKS.TEAL_WALL);
-      // Corner spectator tables leaving open pitch center (48..57, 15..27)
+      this.fill(43, y, 7, 61, y, 7, BLOCKS.TEAL_WALL);
       this.placeCafeTable(45, y, 10, BLOCKS.WHITE_DESK, BLOCKS.TEAL_WALL);
       this.placeCafeTable(57, y, 10, BLOCKS.WHITE_DESK, BLOCKS.TEAL_WALL);
       this.placeCafeTable(57, y, 29, BLOCKS.WHITE_DESK, BLOCKS.TEAL_WALL);
@@ -484,15 +481,15 @@
     }
 
     // =========================================================================
-    // FLOOR 3: Forest Theme + Fitness Center (Studio Rooms)
+    // FLOOR 3: Forest Theme + Open-Concept Fitness Studios
     // =========================================================================
     buildLevel5Forest(lvl) {
       const y = lvl.standY;
       const yCeil = lvl.floorY + 5;
 
-      // L1 West: Forest Botanical Lounge
+      // L1 West: Open Forest Botanical Lounge
       this.fill(5, lvl.floorY, 7, 25, lvl.floorY, 33, BLOCKS.SAGE_CARPET);
-      this.fill(5, y, 10, 5, y + 3, 30, BLOCKS.FOREST_MURAL);
+      this.fill(5, y, 10, 5, y + 1, 30, BLOCKS.FOREST_MURAL);
       for (let z = 10; z <= 30; z += 6) {
         for (let x = 8; x <= 22; x += 6) {
           this.fill(x - 1, yCeil, z - 1, x + 1, yCeil, z + 1, BLOCKS.FOREST_DARK);
@@ -513,14 +510,14 @@
       this.set(28, y, 15, BLOCKS.PLANT);
       this.set(39, y, 15, BLOCKS.PLANT);
 
-      // L2 East: Fitness Center (Studio Rooms — Yoga Studio + Spin & Turf Studio)
+      // L2 East: Open-Glass Yoga Studio + Spin & Turf Studio
       this.fill(42, lvl.floorY, 7, 62, lvl.floorY, 20, BLOCKS.WOOD);
       this.fill(42, lvl.floorY, 21, 62, lvl.floorY, 33, BLOCKS.CHARCOAL_FLOOR);
       this.fill(48, lvl.floorY, 27, 61, lvl.floorY, 32, BLOCKS.TURF);
       for (let x = 42; x <= 62; x++) {
-        if (x < 50 || x > 54) this.fill(x, y, 20, x, y + 3, 20, BLOCKS.GLASS);
+        if (x < 50 || x > 54) this.set(x, y, 20, BLOCKS.GLASS);
       }
-      this.fill(45, y, 7, 59, y + 1, 7, BLOCKS.LOCKER);
+      this.fill(45, y, 7, 59, y, 7, BLOCKS.LOCKER);
       [46, 51, 56].forEach((mx) => {
         this.fill(mx, y, 11, mx + 2, y, 12, BLOCKS.YOGA_MAT);
         this.fill(mx, y, 15, mx + 2, y, 16, BLOCKS.YOGA_MAT);
@@ -537,17 +534,16 @@
     }
 
     // =========================================================================
-    // FLOOR 4: Ocean Theme + Fitness Relax Corner, Lockers & Showers
+    // FLOOR 4: Ocean Theme + Open Fitness Relax Corner & Lockers
     // =========================================================================
     buildLevel6Ocean(lvl) {
       const y = lvl.standY;
       const yCeil = lvl.floorY + 5;
 
-      // L1 West: Coastal Porthole Zone (North) + Kelp Wave Baffle Zone (South)
+      // L1 West: Open Coastal Zone (North) + Kelp Wave Lounge (South)
       this.fill(5, lvl.floorY, 7, 25, lvl.floorY, 33, BLOCKS.WOOD);
-      this.fill(5, y, 7, 5, y + 3, 20, BLOCKS.OCEAN_WALL);
+      this.fill(5, y, 7, 5, y + 1, 20, BLOCKS.OCEAN_WALL);
       this.placePantry(8, 16, 7, y, BLOCKS.WOOD, BLOCKS.OCEAN_MOSAIC);
-      // Keep (14..17, 13..16) clear for Ocean Dolphin Fountain!
       this.fill(6, y, 12, 8, y, 17, BLOCKS.NAVY_BOOTH);
       this.placeCafeTable(20, y, 13, BLOCKS.WHITE_DESK, BLOCKS.OCEAN_WALL);
       for (let z = 22; z <= 32; z += 3) {
@@ -561,13 +557,13 @@
       this.fill(27, lvl.floorY, 9, 40, lvl.floorY, 33, BLOCKS.MARBLE);
       this.fill(27, lvl.floorY, 10, 40, lvl.floorY, 15, BLOCKS.OCEAN_MOSAIC);
 
-      // L2 East: Fitness Center (Relax Corner, Locker, Shower/Restroom)
+      // L2 East: Open Relax Corner, Low Lockers & Frosted Glass Wash Zones
       this.fill(42, lvl.floorY, 7, 62, lvl.floorY, 33, BLOCKS.WOOD);
       this.fill(43, lvl.floorY, 7, 62, lvl.floorY, 15, BLOCKS.OCEAN_MOSAIC);
-      this.fill(44, y, 7, 54, y + 2, 7, BLOCKS.LOCKER);
-      this.fill(44, y, 11, 52, y + 2, 11, BLOCKS.LOCKER);
+      this.fill(44, y, 7, 54, y, 7, BLOCKS.LOCKER);
+      this.fill(44, y, 11, 52, y, 11, BLOCKS.LOCKER);
       for (let x = 56; x <= 62; x += 3) {
-        this.fill(x, y, 7, x, y + 3, 14, BLOCKS.MARBLE);
+        this.fill(x, y, 7, x, y + 1, 14, BLOCKS.GLASS);
       }
       this.fill(44, y, 21, 47, y, 22, BLOCKS.WHITE_DESK);
       this.fill(44, y, 27, 47, y, 28, BLOCKS.WHITE_DESK);
@@ -581,7 +577,7 @@
     }
 
     // =========================================================================
-    // FLOOR 5: Industrial Theme + Fitness Center (Main Gym)
+    // FLOOR 5: Industrial Open-Office Loft + Unobstructed Main Gym
     // =========================================================================
     buildLevel7Industrial(lvl) {
       const y = lvl.standY;
@@ -597,15 +593,15 @@
         this.set(x, yCeil, 30, BLOCKS.LED_LIGHT);
       }
 
-      // L1 West: Raw Concrete Loft + Bright Red Booths + Michelangelo Statue Gallery!
+      // L1 West: Open Co-Work Loft + Red Booths + Michelangelo Statue Gallery
       this.fill(5, lvl.floorY, 7, 25, lvl.floorY, 33, BLOCKS.CHARCOAL_FLOOR);
-      this.fill(5, y, 8, 5, y + 3, 32, BLOCKS.RAW_CONCRETE);
+      this.fill(5, y, 8, 5, y + 1, 32, BLOCKS.RAW_CONCRETE);
       this.fill(6, y, 11, 9, y, 12, BLOCKS.RED_BOOTH);
       this.fill(6, y, 15, 9, y, 16, BLOCKS.RED_BOOTH);
       this.fill(6, y, 19, 9, y, 20, BLOCKS.RED_BOOTH);
       this.fill(7, y, 13, 8, y, 14, BLOCKS.WOOD);
       this.fill(7, y, 17, 8, y, 18, BLOCKS.WOOD);
-      // Keep (15..18, 16..19) clear for Statue of Michelangelo!
+      // Open-office co-work tables around Michelangelo Statue (15..18, 16..19)
       this.fill(14, y, 11, 22, y, 12, BLOCKS.WOOD);
       this.fill(14, y, 22, 22, y, 23, BLOCKS.WOOD);
       this.placePantry(10, 20, 33, y, BLOCKS.YELLOW_CAB, BLOCKS.RAW_CONCRETE);
@@ -614,17 +610,16 @@
       // LL Center: Raw Concrete Industrial Lift Lobby
       this.fill(27, lvl.floorY, 9, 40, lvl.floorY, 33, BLOCKS.RAW_CONCRETE);
 
-      // L2 East: Main Gym
+      // L2 East: Wide-Open Main Gym (turf workout zone completely clear overhead for Punching Bag visibility!)
       this.fill(42, lvl.floorY, 7, 62, lvl.floorY, 33, BLOCKS.CHARCOAL_FLOOR);
       this.fill(44, lvl.floorY, 10, 50, lvl.floorY, 30, BLOCKS.TURF);
-      this.fill(45, y, 12, 45, y + 3, 12, BLOCKS.RAW_CONCRETE);
-      this.fill(49, y, 12, 49, y + 3, 12, BLOCKS.RAW_CONCRETE);
-      this.fill(45, y + 3, 12, 49, y + 3, 28, BLOCKS.RAW_CONCRETE);
-      this.fill(45, y, 28, 45, y + 3, 28, BLOCKS.RAW_CONCRETE);
-      this.fill(49, y, 28, 49, y + 3, 28, BLOCKS.RAW_CONCRETE);
+      // Sleek low corner rack stations at North (z=12) & South (z=28) — NO blocking overhead slab!
+      this.fill(45, y, 12, 45, y + 1, 12, BLOCKS.GYM_MACHINE);
+      this.fill(49, y, 12, 49, y + 1, 12, BLOCKS.GYM_MACHINE);
+      this.fill(45, y, 28, 45, y + 1, 28, BLOCKS.GYM_MACHINE);
+      this.fill(49, y, 28, 49, y + 1, 28, BLOCKS.GYM_MACHINE);
       for (let z = 12; z <= 28; z += 4) {
         this.set(53, y, z, BLOCKS.GYM_MACHINE);
-        this.set(53, y + 1, z, BLOCKS.GYM_MACHINE);
       }
       for (let z = 10; z <= 30; z += 3) {
         this.set(60, y, z, BLOCKS.GYM_MACHINE);
@@ -636,15 +631,15 @@
     }
 
     // =========================================================================
-    // FLOOR 6: Map Theme (Dual City-Map & Terrain-Map Executive Sky Lounges)
+    // FLOOR 6: Map Theme (Open-Concept Sky Atrium & Co-Work Lounges)
     // =========================================================================
     buildLevel8Map(lvl) {
       const y = lvl.standY;
       const yCeil = lvl.floorY + 5;
 
-      // L1 West: Warm Terracotta City Map Lounge
+      // L1 West: Open City Map Sky Lounge
       this.fill(5, lvl.floorY, 7, 25, lvl.floorY, 33, BLOCKS.WOOD);
-      this.fill(5, y, 9, 5, y + 3, 31, BLOCKS.CITY_MURAL);
+      this.fill(5, y, 9, 5, y + 1, 31, BLOCKS.CITY_MURAL);
       this.fill(7, yCeil, 9, 14, yCeil, 18, BLOCKS.MAP_ORANGE);
       this.fill(16, yCeil, 19, 23, yCeil, 30, BLOCKS.MAP_ORANGE);
       this.placePantry(8, 17, 7, y, BLOCKS.WOOD, BLOCKS.WHITE_DESK);
@@ -653,16 +648,16 @@
       this.placeCafeTable(13, y, 24, BLOCKS.WHITE_DESK, BLOCKS.MAP_ORANGE);
       this.placeCafeTable(20, y, 20, BLOCKS.WHITE_DESK, BLOCKS.MAP_ORANGE);
 
-      // LL Center: VIP Gold-Trimmed Sky Atrium (center x=34, z=27 holds World Globe!)
+      // LL Center: VIP Open Glass Sky Atrium (center x=34, z=27 holds World Globe!)
       this.fill(27, lvl.floorY, 9, 40, lvl.floorY, 33, BLOCKS.MARBLE);
-      this.fill(27, y, 9, 27, y + 4, 9, BLOCKS.GOLD_TRIM);
-      this.fill(40, y, 9, 40, y + 4, 9, BLOCKS.GOLD_TRIM);
-      this.fill(27, y, 33, 27, y + 4, 33, BLOCKS.GOLD_TRIM);
-      this.fill(40, y, 33, 40, y + 4, 33, BLOCKS.GOLD_TRIM);
+      this.fill(27, y, 9, 27, y + 1, 9, BLOCKS.GOLD_TRIM);
+      this.fill(40, y, 9, 40, y + 1, 9, BLOCKS.GOLD_TRIM);
+      this.fill(27, y, 33, 27, y + 1, 33, BLOCKS.GOLD_TRIM);
+      this.fill(40, y, 33, 40, y + 1, 33, BLOCKS.GOLD_TRIM);
 
-      // L2 East: Green Terrain Map Sky Lounge
+      // L2 East: Open Terrain Map Executive Sky Lounge
       this.fill(42, lvl.floorY, 7, 62, lvl.floorY, 33, BLOCKS.CHARCOAL_FLOOR);
-      this.fill(62, y, 10, 62, y + 3, 30, BLOCKS.MAP_GREEN);
+      this.fill(62, y, 10, 62, y + 1, 30, BLOCKS.MAP_GREEN);
       this.fill(44, yCeil, 9, 52, yCeil, 19, BLOCKS.MAP_GREEN);
       this.fill(53, yCeil, 20, 60, yCeil, 30, BLOCKS.MAP_GREEN);
       this.placePantry(46, 56, 7, y, BLOCKS.WOOD, BLOCKS.OCEAN_MOSAIC);

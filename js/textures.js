@@ -110,21 +110,17 @@
       return null;
     });
 
-    // 4: Curtain Glass Window (HD architectural mullion + reflection)
+    // 4: Curtain Glass Window (crystal-clear open-office architectural glass)
     drawCustomTile(ctx, 4, 0, (c, s) => {
       c.clearRect(0, 0, s, s);
-      c.fillStyle = 'rgba(135, 206, 244, 0.36)';
+      c.fillStyle = 'rgba(186, 230, 253, 0.24)';
       c.fillRect(0, 0, s, s);
-      c.strokeStyle = 'rgba(30, 41, 59, 0.9)';
-      c.lineWidth = 4;
-      c.strokeRect(2, 2, s - 4, s - 4);
-      c.fillStyle = 'rgba(224, 242, 254, 0.55)';
+      c.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      c.lineWidth = 2;
+      c.strokeRect(1, 1, s - 2, s - 2);
+      c.fillStyle = 'rgba(240, 249, 255, 0.35)';
       c.beginPath();
-      c.moveTo(8, 22); c.lineTo(22, 8); c.lineTo(30, 8); c.lineTo(8, 30);
-      c.closePath();
-      c.fill();
-      c.beginPath();
-      c.moveTo(14, 42); c.lineTo(42, 14); c.lineTo(48, 14); c.lineTo(14, 48);
+      c.moveTo(8, 22); c.lineTo(22, 8); c.lineTo(27, 8); c.lineTo(8, 27);
       c.closePath();
       c.fill();
     });
