@@ -816,11 +816,21 @@
       <button id="btn-close-drawer" class="mini-btn">Close</button>
     </div>
 
-    <div class="section-box">
-      <div class="section-label">1. Login by Name</div>
-      <form id="login-form" class="inline-form">
-        <input id="login-name-input" type="text" placeholder="Enter user name (e.g. Mei, Priya, Mika)..." />
-        <button type="submit" class="mini-btn" style="background:#0284c7;color:#fff">Login</button>
+    <div class="section-box" id="sso-box">
+      <div class="section-label">1. Microsoft Entra SSO (Intel Login)</div>
+      <div id="sso-signed-out" style="display:flex;flex-direction:column;gap:5px;">
+        <button id="btn-sso-login" class="hud-btn primary" type="button" style="background:#0068b5;border-color:#38bdf8;color:#fff;font-weight:700;">🔐 Sign in with Intel SSO</button>
+        <div id="sso-mode-note" style="font-size:10.5px;color:#94a3b8;">Checking Entra SSO mode...</div>
+      </div>
+      <div id="sso-signed-in" style="display:none;flex-direction:column;gap:5px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+          <span id="sso-user-label" style="font-size:11.5px;color:#4ade80;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">✅ SSO Verified</span>
+          <button id="btn-sso-logout" class="mini-btn del-btn" type="button">Sign Out</button>
+        </div>
+      </div>
+      <form id="login-form" class="inline-form" style="margin-top:2px;">
+        <input id="login-name-input" type="text" placeholder="Or manual login by name (e.g. Mei)..." />
+        <button type="submit" class="mini-btn" style="background:#334155;color:#fff">Name</button>
       </form>
     </div>
 
@@ -892,12 +902,14 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+  <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
   <script src="js/textures.js"></script>
   <script src="js/building.js"></script>
   <script src="js/mesher.js"></script>
   <script src="js/players.js"></script>
   <script src="js/items.js"></script>
   <script src="js/roster.js"></script>
+  <script src="js/sso.js"></script>
   <script src="js/main.js"></script>
 </body>
 </html>

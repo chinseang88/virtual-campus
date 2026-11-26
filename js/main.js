@@ -7,6 +7,7 @@
   const { createAvatarMesh, moveWithCollision, RosterCrowdManager } = global.VoxelPlayers;
   const { UniqueItemManager } = global.PG17Items;
   const { RosterManager, nextUpgradeLevel } = global.PG17Roster;
+  const { SSOManager } = global.PG17SSO || {};
 
   const CAMERA_MODES = ['Campus 3/4', 'Top-Down Map', '1st Person Surround'];
 
@@ -255,6 +256,7 @@
     const itemManager = new UniqueItemManager(scene, PG17_LEVELS);
     const crowd = new RosterCrowdManager(scene, world, (sender, text) => pushChat(sender, text));
     const sfx = new SoundFX();
+    const ssoManager = SSOManager ? new SSOManager() : null;
 
     // Local Player State
     const playerPos = new THREE.Vector3(28.0, 2.0, 26.0);
@@ -1024,7 +1026,27 @@
       const maxFloor = world.getMaxAllowedFloorObj(user.level);
       const nextLvl = nextUpgradeLevel(user.level);
       const crown = roster.isSuperUser ? '👑 ' : '';
-      hudUserEl.innerHTML = `<strong>${crown}${escapeHtml(user.name)}</strong> • Access Floor ${user.level} <span class="badge-pill" style="background:${maxFloor.accent};color:#0f172a">F1 → F${maxFloor.level}</span>`;
+      const ssoBadge = user.ssoVerified
+        ? ' <span class="badge-pill" style="background:#0068b5;color:#fff">SSO</span>'
+        : '';
+      hudUserEl.innerHTML = `<strong>${crown}${escapeHtml(user.name)}</strong>${ssoBadge} • Access Floor ${user.level} <span class="badge-pill" style="background:${maxFloor.accent};color:#0f172a">F1 → F${maxFloor.level}</span>`;
+
+      const ssoOutEl = document.getElementById('sso-signed-out');
+      const ssoInEl = document.getElementById('sso-signed-in');
+      const ssoUserEl = document.getElementById('sso-user-label');
+      const ssoNoteEl = document.getElementById('sso-mode-note');
+      if (ssoOutEl && ssoInEl) {
+        const hasSso = !!(roster.ssoProfile && ssoManager && ssoManager.user);
+        ssoOutEl.style.display = hasSso ? 'none' : 'flex';
+        ssoInEl.style.display = hasSso ? 'flex' : 'none';
+        if (hasSso && ssoUserEl) {
+          const em = roster.ssoProfile.email ? ` (${roster.ssoProfile.email})` : '';
+          ssoUserEl.textContent = `✅ ${roster.ssoProfile.name}${em}`;
+        }
+        if (ssoNoteEl && ssoManager) {
+          ssoNoteEl.textContent = `Mode: ${ssoManager.getModeLabel()}`;
+        }
+      }
       if (roster.isSuperUser) {
         hudUpgradeEl.textContent = '👑 Super User Mode: Full F1–F6 access & floor control unlocked.';
       } else if (maxFloor.level >= 6) {
@@ -1229,6 +1251,40 @@
       setDrawerOpen(!drawerOpen);
     });
     document.getElementById('btn-close-drawer').addEventListener('click', () => setDrawerOpen(false));
+
+    const btnSsoLogin = document.getElementById('btn-sso-login');
+    const btnSsoLogout = document.getElementById('btn-sso-logout');
+    if (btnSsoLogin && ssoManager) {
+      btnSsoLogin.addEventListener('click', async () => {
+        try {
+          btnSsoLogin.disabled = true;
+          btnSsoLogin.textContent = 'Signing in via Intel SSO...';
+          const res = await ssoManager.signIn();
+          if (res && res.user) {
+            const u = roster.loginWithSso(res.user);
+            applyActiveUserState(true);
+            const maxFl = world.getMaxAllowedFloorObj(u.level);
+            showToast(`✅ Intel SSO Signed in: ${u.name} (Floor ${u.level} — ${maxFl.shortName})`, false);
+            pushChat('', `🔐 ${u.name} signed in via Intel SSO (Floor ${u.level}).`, true);
+          }
+        } catch (err) {
+          const msg = err && err.message ? err.message : 'SSO sign-in canceled or failed.';
+          showToast(`🔒 SSO Error: ${msg}`, true);
+        } finally {
+          btnSsoLogin.disabled = false;
+          btnSsoLogin.textContent = '🔐 Sign in with Intel SSO';
+          renderUserHud();
+        }
+      });
+    }
+    if (btnSsoLogout && ssoManager) {
+      btnSsoLogout.addEventListener('click', async () => {
+        await ssoManager.signOut();
+        roster.logoutSso();
+        applyActiveUserState(true);
+        showToast('🔐 Signed out of Intel SSO.', false);
+      });
+    }
 
     document.getElementById('login-form').addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1780,6 +1836,26 @@
     // Initialize
     applyActiveUserState(false);
     updateButtons();
+
+    if (ssoManager) {
+      ssoManager.init().then((ssoUser) => {
+        if (ssoUser) {
+          const u = roster.loginWithSso(ssoUser);
+          applyActiveUserState(true);
+          const maxFl = world.getMaxAllowedFloorObj(u.level);
+          showToast(`✅ Intel SSO active: ${u.name} (Floor ${u.level} — ${maxFl.shortName})`, false);
+        } else {
+          renderUserHud();
+        }
+      });
+    }
+    try {
+      const ssoErr = new URLSearchParams(window.location.search).get('sso_error');
+      if (ssoErr) {
+        showToast(`🔒 Intel SSO: ${ssoErr}`, true);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch (e) { /* ignore */ }
 
     const loadingEl = document.getElementById('loading-overlay');
     if (loadingEl) loadingEl.style.display = 'none';

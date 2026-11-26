@@ -121,6 +121,7 @@
     constructor(onChange) {
       this.onChange = onChange;
       this.users = this.loadUsers();
+      this.ssoProfile = null;
       const savedActive = localStorage.getItem(ACTIVE_USER_KEY);
       this.activeUserName = savedActive && this.findUser(savedActive)
         ? savedActive
@@ -188,11 +189,12 @@
 
     getActiveUser() {
       const base = this.findUser(this.activeUserName) || this.users[0] || { name: 'Guest', level: 1, role: 'Visitor' };
+      const ssoMeta = this.ssoProfile ? { ssoVerified: true, email: this.ssoProfile.email || '' } : {};
       // Super User always has full F1-F6 access while unlocked
       if (this.isSuperUser) {
-        return { ...base, level: 6, role: `${base.role || 'Member'} • Super User` };
+        return { ...base, ...ssoMeta, level: 6, role: `${base.role || 'Member'} • Super User` };
       }
-      return base;
+      return { ...base, ...ssoMeta };
     }
 
     login(name) {
@@ -205,6 +207,40 @@
         this.users.push(u);
       }
       this.activeUserName = u.name;
+      this.save(false);
+      return this.getActiveUser();
+    }
+
+    loginWithSso(profile) {
+      if (!profile || !profile.name) return null;
+      const cleanName = String(profile.name).trim();
+      const email = String(profile.email || '').trim();
+      const emailLocal = email ? email.split('@')[0] : '';
+
+      // Match existing roster member by full name OR email local-part (preserves Super User floor grant!)
+      let u = this.findUser(cleanName) || (emailLocal ? this.findUser(emailLocal) : null);
+      if (!u) {
+        u = {
+          name: cleanName.slice(0, 24),
+          level: 1,
+          role: profile.role || 'Intel SSO',
+        };
+        this.users.push(u);
+      }
+      this.ssoProfile = {
+        name: cleanName,
+        email,
+        role: profile.role || u.role || 'Intel SSO',
+        verified: true,
+      };
+      this.activeUserName = u.name;
+      this.save(false);
+      return this.getActiveUser();
+    }
+
+    logoutSso() {
+      this.ssoProfile = null;
+      if (this.users[0]) this.activeUserName = this.users[0].name;
       this.save(false);
       return this.getActiveUser();
     }
