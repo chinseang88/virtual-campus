@@ -35,17 +35,17 @@
       box-shadow: 0 0 6px rgba(0, 0, 0, 0.7);
     }
 
-    /* Left Sidebar Column (prevents overlap between HUD & Post Board) */
+    /* Left Sidebar Column (compact so main map stays wide open!) */
     #left-column {
       position: fixed;
-      top: 14px;
-      left: 14px;
-      bottom: 14px;
-      width: 325px;
+      top: 10px;
+      left: 10px;
+      bottom: 10px;
+      width: 236px;
       z-index: 20;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 6px;
       pointer-events: none;
     }
 
@@ -54,52 +54,52 @@
       background: rgba(15, 23, 42, 0.86);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255, 255, 255, 0.16);
-      border-radius: 12px;
-      padding: 12px 14px;
+      border-radius: 10px;
+      padding: 8px 10px;
       width: 100%;
       pointer-events: auto;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
     }
     .hud-title {
       font-weight: 700;
-      font-size: 13.5px;
-      letter-spacing: 0.4px;
+      font-size: 11.5px;
+      letter-spacing: 0.35px;
       color: #38bdf8;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
     }
     .live-dot {
-      width: 8px;
-      height: 8px;
+      width: 7px;
+      height: 7px;
       border-radius: 50%;
       background: #4ade80;
       box-shadow: 0 0 8px #4ade80;
       display: inline-block;
     }
     #room-name {
-      margin-top: 5px;
-      font-size: 13.5px;
+      margin-top: 3px;
+      font-size: 12px;
       color: #f8fafc;
       font-weight: 600;
     }
     #floor-landmark-badge {
-      margin-top: 4px;
-      font-size: 11px;
+      margin-top: 3px;
+      font-size: 10px;
       color: #fde047;
       font-weight: 600;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
-      gap: 4px;
+      gap: 3px;
     }
     .floor-item-chip {
       border: 1px solid rgba(253, 224, 71, 0.4);
       background: rgba(253, 224, 71, 0.12);
       color: #fef08a;
-      border-radius: 6px;
-      padding: 2px 6px;
-      font-size: 10.5px;
+      border-radius: 5px;
+      padding: 1px 5px;
+      font-size: 9.5px;
       font-weight: 700;
       cursor: pointer;
     }
@@ -109,68 +109,74 @@
     }
     #total-players-badge {
       margin-top: 2px;
-      font-size: 11px;
+      font-size: 10px;
       color: #94a3b8;
     }
     #hud-user-badge {
-      margin-top: 8px;
-      padding-top: 8px;
+      margin-top: 5px;
+      padding-top: 5px;
       border-top: 1px solid rgba(255, 255, 255, 0.12);
-      font-size: 12.5px;
+      font-size: 11px;
       color: #e2e8f0;
       display: flex;
       align-items: center;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
     }
     .badge-pill {
-      font-size: 10.5px;
+      font-size: 9.5px;
       font-weight: 800;
-      padding: 2px 7px;
+      padding: 1px 6px;
       border-radius: 999px;
     }
     #hud-upgrade-note {
-      margin-top: 4px;
-      font-size: 11px;
+      margin-top: 2px;
+      font-size: 10px;
       color: #cbd5e1;
-      line-height: 1.35;
+      line-height: 1.25;
     }
     .left-actions {
-      margin-top: 8px;
+      margin-top: 6px;
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 5px;
     }
 
     /* Top-Right Controls & Elevator */
     #hud-top-right {
       position: fixed;
-      top: 14px;
-      right: 14px;
+      top: 10px;
+      right: 10px;
       background: rgba(15, 23, 42, 0.85);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255, 255, 255, 0.16);
-      border-radius: 12px;
-      padding: 10px 12px;
+      border-radius: 10px;
+      padding: 8px 9px;
       z-index: 20;
       display: flex;
       flex-direction: column;
-      gap: 8px;
-      width: 262px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+      gap: 5px;
+      width: 202px;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
     }
     .btn-row {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6px;
+      gap: 4px;
+    }
+    .zoom-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 4px;
+      align-items: center;
     }
     .hud-btn {
       background: rgba(255, 255, 255, 0.1);
       color: #f1f5f9;
       border: 1px solid rgba(255, 255, 255, 0.18);
       border-radius: 6px;
-      padding: 6px 8px;
-      font-size: 11.5px;
+      padding: 4px 6px;
+      font-size: 10.5px;
       font-weight: 600;
       cursor: pointer;
       transition: background 0.15s;
@@ -190,38 +196,38 @@
       color: #fef08a;
     }
     .comfort-tip {
-      font-size: 10.5px;
+      font-size: 9.8px;
       color: #94a3b8;
       background: rgba(255, 255, 255, 0.05);
       border-radius: 6px;
-      padding: 5px 7px;
-      line-height: 1.35;
+      padding: 4px 6px;
+      line-height: 1.25;
     }
 
     .elevator-title {
-      font-size: 11px;
+      font-size: 10px;
       text-transform: uppercase;
-      letter-spacing: 0.7px;
+      letter-spacing: 0.6px;
       color: #94a3b8;
       font-weight: 700;
-      margin-top: 2px;
+      margin-top: 1px;
     }
     #floor-buttons {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: 3px;
     }
     .floor-btn {
       display: flex;
       align-items: center;
-      gap: 7px;
+      gap: 5px;
       width: 100%;
-      padding: 5px 8px;
-      border-radius: 6px;
+      padding: 3.5px 6px;
+      border-radius: 5px;
       border: 1px solid rgba(255, 255, 255, 0.14);
       background: rgba(255, 255, 255, 0.06);
       color: #e2e8f0;
-      font-size: 11.5px;
+      font-size: 10.5px;
       cursor: pointer;
       text-align: left;
       transition: all 0.14s;
@@ -367,16 +373,16 @@
     /* Optional On-Screen Pokemon D-Pad (Bottom-Right) */
     #pkmn-dpad {
       position: fixed;
-      bottom: 16px;
-      right: 16px;
+      bottom: 10px;
+      right: 10px;
       z-index: 20;
       display: grid;
-      grid-template-columns: 36px 36px 36px;
-      grid-template-rows: 36px 36px 36px;
-      gap: 3px;
+      grid-template-columns: 30px 30px 30px;
+      grid-template-rows: 30px 30px 30px;
+      gap: 2px;
       background: rgba(15, 23, 42, 0.72);
-      padding: 6px;
-      border-radius: 12px;
+      padding: 4px;
+      border-radius: 10px;
       border: 1px solid rgba(255, 255, 255, 0.16);
       backdrop-filter: blur(8px);
     }
@@ -384,8 +390,8 @@
       background: rgba(255, 255, 255, 0.12);
       border: 1px solid rgba(255, 255, 255, 0.2);
       color: #f8fafc;
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: 5px;
+      font-size: 11px;
       font-weight: 800;
       cursor: pointer;
       display: flex;
@@ -393,7 +399,7 @@
       justify-content: center;
     }
     .dpad-btn:active, .dpad-btn:hover { background: rgba(56, 189, 248, 0.35); }
-    .dpad-center { background: rgba(250, 204, 21, 0.25); border-color: rgba(250, 204, 21, 0.6); color: #fde047; font-size: 11px; }
+    .dpad-center { background: rgba(250, 204, 21, 0.25); border-color: rgba(250, 204, 21, 0.6); color: #fde047; font-size: 10px; }
 
     /* Excel Roster & Login Drawer */
     #roster-drawer {
@@ -489,64 +495,74 @@
 
     /* Left-Side User Post & Chat Board */
     #chat-box {
-      flex: 1;
+      flex: 0 1 215px;
       min-height: 0;
+      max-height: 235px;
+      margin-top: auto;
       width: 100%;
       background: rgba(15, 23, 42, 0.82);
       backdrop-filter: blur(10px);
       border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 12px;
-      padding: 10px 12px;
+      border-radius: 10px;
+      padding: 7px 9px;
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: 5px;
       pointer-events: auto;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+    }
+    #chat-box.collapsed {
+      flex: 0 0 auto;
+    }
+    #chat-box.collapsed #chat-messages,
+    #chat-box.collapsed #post-form {
+      display: none;
     }
     .post-board-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.6px;
+      letter-spacing: 0.5px;
       color: #94a3b8;
     }
+    .post-board-btns { display: flex; gap: 4px; }
     #chat-messages {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      padding-right: 4px;
+      gap: 4px;
+      padding-right: 3px;
     }
     .chat-row {
       background: rgba(30, 41, 59, 0.88);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      padding: 6px 9px;
-      border-radius: 8px;
-      font-size: 12px;
-      line-height: 1.38;
+      padding: 4px 7px;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.3;
       color: #f1f5f9;
       word-break: break-word;
     }
     .chat-name { color: #7dd3fc; font-weight: 700; }
     .chat-floor-tag {
       display: inline-block;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 700;
       background: rgba(56, 189, 248, 0.2);
       color: #bae6fd;
-      padding: 0 5px;
+      padding: 0 4px;
       border-radius: 4px;
-      margin-right: 4px;
+      margin-right: 3px;
     }
     .chat-system { color: #fde047; font-style: italic; background: rgba(250, 204, 21, 0.08); }
     #post-form {
       display: flex;
-      gap: 6px;
+      gap: 4px;
       pointer-events: auto;
     }
     #chat-input {
@@ -555,10 +571,10 @@
       user-select: text;
       background: rgba(30, 41, 59, 0.95);
       border: 1px solid rgba(148, 163, 184, 0.35);
-      border-radius: 7px;
+      border-radius: 6px;
       color: #fff;
-      padding: 6px 9px;
-      font-size: 12px;
+      padding: 5px 7px;
+      font-size: 11px;
       outline: none;
     }
     #chat-input:focus { border-color: #38bdf8; }
@@ -566,13 +582,18 @@
       background: #0284c7;
       color: #fff;
       border: none;
-      border-radius: 7px;
-      padding: 6px 12px;
-      font-size: 12px;
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-size: 11px;
       font-weight: 700;
       cursor: pointer;
     }
     #btn-post-msg:hover { background: #0369a1; }
+
+    @media (max-width: 960px) {
+      #left-column { width: 208px; }
+      #hud-top-right { width: 184px; }
+    }
 
     #loading-overlay {
       position: fixed;
@@ -611,8 +632,11 @@
 
     <div id="chat-box">
       <div class="post-board-header">
-        <span>Virtual Intel Campus Wall / Posts</span>
-        <button id="btn-clear-posts" class="mini-btn" type="button">Clear</button>
+        <span>Campus Wall / Posts</span>
+        <div class="post-board-btns">
+          <button id="btn-toggle-chat" class="mini-btn" type="button" title="Collapse/Expand Wall">−</button>
+          <button id="btn-clear-posts" class="mini-btn" type="button">Clear</button>
+        </div>
       </div>
       <div id="chat-messages"></div>
       <form id="post-form">
@@ -625,14 +649,19 @@
   <div id="hud-top-right">
     <div class="btn-row">
       <button id="btn-camera" class="hud-btn wide primary">View: Campus 3/4 [C]</button>
-      <button id="btn-slice" class="hud-btn">Slice Floor: ON [R]</button>
+      <button id="btn-slice" class="hud-btn">Slice: ON [R]</button>
       <button id="btn-time" class="hud-btn">Day [T]</button>
       <button id="btn-interact" class="hud-btn wide upgrade">Talk / Interact [E]</button>
     </div>
-    <div class="comfort-tip" id="comfort-tip">
-      <strong>Campus 3/4:</strong> WASD / Arrows or click floor to walk. Click any person/item or press [E] to talk &amp; interact!
+    <div class="zoom-row">
+      <button id="btn-zoom-out" class="hud-btn" type="button" title="Zoom Out [-]">🔍−</button>
+      <button id="btn-zoom-reset" class="hud-btn" type="button" title="Reset Zoom [0]">100%</button>
+      <button id="btn-zoom-in" class="hud-btn" type="button" title="Zoom In [+]">🔍+</button>
     </div>
-    <div class="elevator-title">Virtual Intel Campus Elevator (F1–F6)</div>
+    <div class="comfort-tip" id="comfort-tip">
+      <strong>Campus 3/4:</strong> Scroll or +/− to zoom. Click floor to walk, click person/item or [E]!
+    </div>
+    <div class="elevator-title">Campus Elevator (F1–F6)</div>
     <div id="floor-buttons"></div>
   </div>
 

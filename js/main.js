@@ -1353,24 +1353,42 @@
       });
     }
 
-    // Camera Mode & Slicer Controls
+    // Camera Mode, Zoom & Slicer Controls
     const btnCamera = document.getElementById('btn-camera');
     const btnSlice = document.getElementById('btn-slice');
     const btnTime = document.getElementById('btn-time');
+    const btnZoomOut = document.getElementById('btn-zoom-out');
+    const btnZoomReset = document.getElementById('btn-zoom-reset');
+    const btnZoomIn = document.getElementById('btn-zoom-in');
+
+    let targetZoom = 1.0;
+    let smoothZoom = 1.0;
+    const MIN_ZOOM = 0.4;
+    const MAX_ZOOM = 2.5;
+
+    function setZoom(next) {
+      targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, next));
+      if (btnZoomReset) {
+        btnZoomReset.textContent = `${Math.round(100 / targetZoom)}%`;
+      }
+    }
 
     function updateButtons() {
       btnCamera.textContent = `View: ${CAMERA_MODES[cameraMode]} [C]`;
-      btnSlice.textContent = `Slice Floor: ${sliceFloors ? 'ON' : 'OFF'} [R]`;
+      btnSlice.textContent = `Slice: ${sliceFloors ? 'ON' : 'OFF'} [R]`;
       btnTime.textContent = `${isNight ? 'Night' : 'Day'} [T]`;
+      if (btnZoomReset) {
+        btnZoomReset.textContent = `${Math.round(100 / targetZoom)}%`;
+      }
 
       if (cameraMode === 0) {
-        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> WASD / Arrows or click floor to walk. Click any person/item or [E] to talk &amp; interact!';
+        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> Scroll or +/− to zoom. Click floor to walk, click person/item or [E]!';
         crosshairEl.style.display = 'none';
       } else if (cameraMode === 1) {
-        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Full floorplan overview. Click floor or WASD to walk, click any person/item to interact.';
+        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Scroll or +/− to zoom out/in. Click floor to walk or click item!';
         crosshairEl.style.display = 'none';
       } else {
-        comfortTipEl.innerHTML = '<strong>1st Person Surround:</strong> Drag or A/D to look 360° horizontally (horizon locked, no up/down tilt). [C] to walk again.';
+        comfortTipEl.innerHTML = '<strong>1st Person:</strong> Drag or A/D to look 360°, Scroll/+/- to zoom. [C] to walk again.';
         crosshairEl.style.display = 'block';
       }
     }
@@ -1419,6 +1437,16 @@
     btnCamera.addEventListener('click', (e) => { e.stopPropagation(); cycleCameraMode(); });
     btnSlice.addEventListener('click', (e) => { e.stopPropagation(); toggleSlice(); });
     btnTime.addEventListener('click', (e) => { e.stopPropagation(); toggleTimeOfDay(); });
+    if (btnZoomIn) btnZoomIn.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom / 1.18); });
+    if (btnZoomOut) btnZoomOut.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom * 1.18); });
+    if (btnZoomReset) btnZoomReset.addEventListener('click', (e) => { e.stopPropagation(); setZoom(1.0); });
+
+    renderer.domElement.addEventListener('wheel', (e) => {
+      if (drawerOpen) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1.1 : 0.9;
+      setZoom(targetZoom * factor);
+    }, { passive: false });
 
     // Cursor Raycasting & Drag Look
     const raycaster = new THREE.Raycaster();
@@ -1527,6 +1555,15 @@
         setDrawerOpen(!drawerOpen);
       } else if (e.code === 'KeyE') {
         performPrimaryAction();
+      } else if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+        e.preventDefault();
+        setZoom(targetZoom / 1.18);
+      } else if (e.code === 'Minus' || e.code === 'NumpadSubtract') {
+        e.preventDefault();
+        setZoom(targetZoom * 1.18);
+      } else if (e.code === 'Digit0' || e.code === 'Numpad0') {
+        e.preventDefault();
+        setZoom(1.0);
       } else if (e.code === 'Enter') {
         e.preventDefault();
         chatInput.focus();
@@ -1554,6 +1591,14 @@
       chatMessagesEl.innerHTML = '';
       try { localStorage.removeItem(POSTS_STORAGE_KEY); } catch (e) { /* ignore */ }
     });
+    const chatBoxEl = document.getElementById('chat-box');
+    const btnToggleChat = document.getElementById('btn-toggle-chat');
+    if (btnToggleChat && chatBoxEl) {
+      btnToggleChat.addEventListener('click', () => {
+        const collapsed = chatBoxEl.classList.toggle('collapsed');
+        btnToggleChat.textContent = collapsed ? '+' : '−';
+      });
+    }
 
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -1754,11 +1799,13 @@
       localAvatar.group.rotation.y = yaw + Math.PI;
       localAvatar.animate(horizSpeed, dt);
 
-      // Camera Positioning
+      // Camera Positioning + Smooth Zoom
+      smoothZoom += (targetZoom - smoothZoom) * Math.min(1, dt * 10);
       if (cameraMode === 0) {
-        // Cozy Pokemon 3/4 Follow Camera (matches Pokopia reference!)
-        const dist = 13.5;
-        const height = 10.5;
+        // Cozy Pokemon 3/4 Follow Camera with adjustable zoom
+        if (Math.abs(camera.fov - 55) > 0.1) { camera.fov = 55; camera.updateProjectionMatrix(); }
+        const dist = 13.5 * smoothZoom;
+        const height = 10.5 * smoothZoom;
         const desiredPos = new THREE.Vector3(
           playerPos.x + Math.sin(camYaw) * dist,
           playerPos.y + height,
@@ -1769,9 +1816,10 @@
         camera.position.copy(smoothCamPos);
         camera.lookAt(smoothLookAt);
       } else if (cameraMode === 1) {
-        // Top-Down Map Walk
-        const dist = 17.5;
-        const height = 24.5;
+        // Top-Down Map Walk with adjustable zoom
+        if (Math.abs(camera.fov - 55) > 0.1) { camera.fov = 55; camera.updateProjectionMatrix(); }
+        const dist = 17.5 * smoothZoom;
+        const height = 24.5 * smoothZoom;
         const desiredPos = new THREE.Vector3(
           playerPos.x + Math.sin(camYaw) * dist,
           playerPos.y + height,
@@ -1782,7 +1830,12 @@
         camera.position.copy(smoothCamPos);
         camera.lookAt(smoothLookAt);
       } else {
-        // 1st Person Surround: strictly horizontal (pitch = 0, NO up/down tilt!)
+        // 1st Person Surround: strictly horizontal (pitch = 0, NO up/down tilt!) + FOV zoom
+        const targetFov = Math.max(28, Math.min(80, 55 * smoothZoom));
+        if (Math.abs(camera.fov - targetFov) > 0.08) {
+          camera.fov = targetFov;
+          camera.updateProjectionMatrix();
+        }
         camera.position.set(playerPos.x, playerPos.y + 1.58, playerPos.z);
         camera.rotation.order = 'YXZ';
         camera.rotation.y = yaw;
