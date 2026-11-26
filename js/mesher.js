@@ -149,7 +149,7 @@
 
     const opaqueMat = new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true });
     const cutoutMat = new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true, alphaTest: 0.4, side: THREE.DoubleSide });
-    const transMat = new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true, transparent: true, opacity: 0.32, depthWrite: false, side: THREE.DoubleSide });
+    const transMat = new THREE.MeshLambertMaterial({ map: atlasTexture, vertexColors: true, transparent: true, opacity: 0.56, depthWrite: false, side: THREE.DoubleSide });
 
     const group = new THREE.Group();
     const opaqueMesh = new THREE.Mesh(buildGeometry(opaque), opaqueMat);

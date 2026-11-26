@@ -110,17 +110,23 @@
       return null;
     });
 
-    // 4: Curtain Glass Window (crystal-clear open-office architectural glass)
+    // 4: Curtain Glass Window (balanced see-through tint + crisp visible mullions)
     drawCustomTile(ctx, 4, 0, (c, s) => {
       c.clearRect(0, 0, s, s);
-      c.fillStyle = 'rgba(186, 230, 253, 0.24)';
+      c.fillStyle = 'rgba(125, 211, 252, 0.42)';
       c.fillRect(0, 0, s, s);
-      c.strokeStyle = 'rgba(148, 163, 184, 0.45)';
-      c.lineWidth = 2;
-      c.strokeRect(1, 1, s - 2, s - 2);
-      c.fillStyle = 'rgba(240, 249, 255, 0.35)';
+      // Outer architectural frame so every wall boundary & doorway is unmistakable
+      c.strokeStyle = 'rgba(30, 41, 59, 0.88)';
+      c.lineWidth = 4;
+      c.strokeRect(2, 2, s - 4, s - 4);
+      // Inner light top/bottom trim highlight
+      c.strokeStyle = 'rgba(224, 242, 254, 0.72)';
+      c.lineWidth = 1.5;
+      c.strokeRect(5, 5, s - 10, s - 10);
+      // Diagonal glass glare
+      c.fillStyle = 'rgba(240, 249, 255, 0.45)';
       c.beginPath();
-      c.moveTo(8, 22); c.lineTo(22, 8); c.lineTo(27, 8); c.lineTo(8, 27);
+      c.moveTo(9, 24); c.lineTo(24, 9); c.lineTo(31, 9); c.lineTo(9, 31);
       c.closePath();
       c.fill();
     });
