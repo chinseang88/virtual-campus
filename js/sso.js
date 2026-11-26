@@ -65,6 +65,56 @@
         }
       }
 
+      // 3. Zero-dependency Direct PKCE fallback if CDN unavailable
+      if (window.crypto && window.crypto.subtle) {
+        this.mode = 'direct-pkce';
+        try {
+          const qs = new URLSearchParams(window.location.search);
+          const code = qs.get('code');
+          const state = qs.get('state');
+          const savedState = sessionStorage.getItem('vc_pkce_state');
+          const verifier = sessionStorage.getItem('vc_pkce_verifier');
+          if (code && state && savedState === state && verifier) {
+            sessionStorage.removeItem('vc_pkce_state');
+            sessionStorage.removeItem('vc_pkce_verifier');
+            window.history.replaceState({}, '', window.location.pathname);
+            const form = new URLSearchParams({
+              client_id: ENTRA_CONFIG.clientId,
+              grant_type: 'authorization_code',
+              code,
+              redirect_uri: `${window.location.origin}${window.location.pathname}`,
+              code_verifier: verifier,
+              scope: ENTRA_CONFIG.scopes.join(' '),
+            });
+            const tokResp = await fetch(`${ENTRA_CONFIG.authority}/oauth2/v2.0/token`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: form.toString(),
+            });
+            const tok = await tokResp.json();
+            if (tok && tok.id_token) {
+              const payloadB64 = tok.id_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+              const claims = JSON.parse(atob(payloadB64));
+              const email = claims.preferred_username || claims.email || '';
+              this.user = {
+                name: claims.name || (email ? email.split('@')[0] : 'Intel User'),
+                email,
+                role: claims.jobTitle || 'Intel SSO',
+                provider: 'intel-entra-pkce',
+                verified: true,
+              };
+              try { localStorage.setItem('vc_direct_sso_user', JSON.stringify(this.user)); } catch (e) { /* ignore */ }
+              return this.user;
+            }
+          }
+          const cached = localStorage.getItem('vc_direct_sso_user');
+          if (cached) this.user = JSON.parse(cached);
+        } catch (err) {
+          this.lastError = err && err.message ? err.message : String(err);
+        }
+        return this.user;
+      }
+
       this.mode = 'unavailable';
       return null;
     }
@@ -80,6 +130,34 @@
         provider: 'intel-entra-pkce',
         verified: true,
       };
+    }
+
+    async _startDirectPkceRedirect() {
+      const bytes = new Uint8Array(32);
+      window.crypto.getRandomValues(bytes);
+      const b64url = (arr) => btoa(String.fromCharCode(...arr)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const verifier = b64url(bytes);
+      const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+      const challenge = b64url(new Uint8Array(digest));
+      const state = b64url(window.crypto.getRandomValues(new Uint8Array(16)));
+      try {
+        sessionStorage.setItem('vc_pkce_verifier', verifier);
+        sessionStorage.setItem('vc_pkce_state', state);
+      } catch (e) { /* ignore */ }
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      const qs = new URLSearchParams({
+        client_id: ENTRA_CONFIG.clientId,
+        response_type: 'code',
+        redirect_uri: redirectUri,
+        response_mode: 'query',
+        scope: ENTRA_CONFIG.scopes.join(' '),
+        state,
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        prompt: 'select_account',
+      });
+      window.location.assign(`${ENTRA_CONFIG.authority}/oauth2/v2.0/authorize?${qs.toString()}`);
+      return { redirected: true };
     }
 
     async signIn() {
@@ -112,11 +190,15 @@
           throw err;
         }
       }
-      throw new Error('SSO provider unavailable. Run local server.py or enable MSAL CDN.');
+      if (window.crypto && window.crypto.subtle) {
+        return this._startDirectPkceRedirect();
+      }
+      throw new Error(this.lastError || 'SSO provider unavailable. Run local server.py or enable MSAL CDN.');
     }
 
     async signOut() {
       this.user = null;
+      try { localStorage.removeItem('vc_direct_sso_user'); } catch (e) { /* ignore */ }
       if (this.mode === 'server') {
         try {
           await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
@@ -143,6 +225,7 @@
     getModeLabel() {
       if (this.mode === 'server') return 'Entra ID OAuth2 (Server Backend)';
       if (this.mode === 'msal-pkce') return 'Entra ID MSAL (Browser PKCE)';
+      if (this.mode === 'direct-pkce') return 'Entra ID OAuth2 (Direct PKCE)';
       return 'Offline / Manual Fallback';
     }
   }
