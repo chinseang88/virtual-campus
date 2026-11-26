@@ -13,11 +13,16 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 PLAYERS = {}
 CHAT_LOG = []
-OAUTH_STATES = {}   # state -> { 'ts': float, 'redirect_uri': str }
-SSO_SESSIONS = {}   # sid -> { 'user': {...}, 'ts': float }
+OAUTH_STATES = {}     # state -> { 'ts': float, 'redirect_uri': str, 'next_url': str }
+SSO_SESSIONS = {}     # sid -> { 'user': {...}, 'ts': float }
+ONE_TIME_CODES = {}   # sso_code -> { 'user': {...}, 'ts': float }
 LOCK = threading.Lock()
 PLAYER_TIMEOUT_SEC = 6.0
 SESSION_TTL_SEC = 86400.0
+ALLOWED_BRIDGE_ORIGINS = {
+    'https://chinseang88.github.io',
+    'https://ecebuildplus.app.intel.com',
+}
 
 
 def load_env_file(env_path):
@@ -43,6 +48,7 @@ def get_sso_config():
         'authority': os.environ.get('AUTHORITY', '').strip().rstrip('/'),
         'redirect_path': os.environ.get('REDIRECT_PATH', '/auth/auth-response').strip() or '/auth/auth-response',
         'scopes': os.environ.get('AUTH_SCOPES', 'User.ReadBasic.All').strip(),
+        'public_base_url': os.environ.get('PUBLIC_BASE_URL', '').strip().rstrip('/'),
     }
 
 
@@ -58,13 +64,36 @@ def decode_jwt_payload(token):
         return {}
 
 
+def is_safe_next_url(next_url, own_origin):
+    if not next_url:
+        return False
+    if next_url.startswith('/') and not next_url.startswith('//'):
+        return True
+    parsed = urllib.parse.urlparse(next_url)
+    origin = f'{parsed.scheme}://{parsed.netloc}'
+    return origin == own_origin or origin in ALLOWED_BRIDGE_ORIGINS
+
+
 class PG17Handler(SimpleHTTPRequestHandler):
+    def _cors_headers(self):
+        origin = self.headers.get('Origin', '')
+        if origin in ALLOWED_BRIDGE_ORIGINS:
+            return [
+                ('Access-Control-Allow-Origin', origin),
+                ('Access-Control-Allow-Methods', 'GET, POST, OPTIONS'),
+                ('Access-Control-Allow-Headers', 'Content-Type'),
+                ('Vary', 'Origin'),
+            ]
+        return []
+
     def _send_json(self, code, obj, extra_headers=None):
         body = json.dumps(obj).encode('utf-8')
         self.send_response(code)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        for k, v in self._cors_headers():
+            self.send_header(k, v)
         if extra_headers:
             for k, v in extra_headers:
                 self.send_header(k, v)
@@ -80,9 +109,14 @@ class PG17Handler(SimpleHTTPRequestHandler):
                 self.send_header(k, v)
         self.end_headers()
 
-    def _get_origin(self):
-        proto = self.headers.get('X-Forwarded-Proto', 'http')
+    def _get_origin(self, cfg=None):
+        if cfg and cfg.get('public_base_url'):
+            return cfg['public_base_url']
         host = self.headers.get('X-Forwarded-Host') or self.headers.get('Host') or 'localhost:8081'
+        proto = self.headers.get('X-Forwarded-Proto', '').strip().lower()
+        if not proto:
+            is_local = host.startswith('localhost') or host.startswith('127.0.0.1')
+            proto = 'http' if is_local else 'https'
         return f'{proto}://{host}'
 
     def _get_sid(self):
@@ -110,17 +144,22 @@ class PG17Handler(SimpleHTTPRequestHandler):
                 return None
             return sess['user']
 
-    def _handle_auth_login(self, cfg):
+    def _handle_auth_login(self, cfg, query_str=''):
         if not (cfg['client_id'] and cfg['client_secret'] and cfg['authority']):
             self._redirect('/?sso_error=' + urllib.parse.quote('Entra SSO env vars not configured in .env'))
             return
+        qs = urllib.parse.parse_qs(query_str)
+        own_origin = self._get_origin(cfg)
+        raw_next = qs.get('next', [''])[0]
+        next_url = raw_next if is_safe_next_url(raw_next, own_origin) else '/'
+
         state = secrets.token_urlsafe(24)
-        redirect_uri = self._get_origin() + cfg['redirect_path']
+        redirect_uri = own_origin + cfg['redirect_path']
         now = time.time()
         with LOCK:
             for k in [k for k, v in OAUTH_STATES.items() if now - v['ts'] > 600]:
                 del OAUTH_STATES[k]
-            OAUTH_STATES[state] = {'ts': now, 'redirect_uri': redirect_uri}
+            OAUTH_STATES[state] = {'ts': now, 'redirect_uri': redirect_uri, 'next_url': next_url}
 
         scope_str = f"openid profile email {cfg['scopes']}".strip()
         params = urllib.parse.urlencode({
@@ -149,6 +188,7 @@ class PG17Handler(SimpleHTTPRequestHandler):
             self._redirect('/?sso_error=' + urllib.parse.quote('Invalid or expired SSO state. Please try again.'))
             return
 
+        next_url = st_info.get('next_url') or '/'
         token_url = f"{cfg['authority']}/oauth2/v2.0/token"
         scope_str = f"openid profile email {cfg['scopes']}".strip()
         form = urllib.parse.urlencode({
@@ -211,11 +251,29 @@ class PG17Handler(SimpleHTTPRequestHandler):
         }
 
         sid = secrets.token_urlsafe(32)
+        now = time.time()
         with LOCK:
-            SSO_SESSIONS[sid] = {'user': user_obj, 'ts': time.time()}
+            SSO_SESSIONS[sid] = {'user': user_obj, 'ts': now}
 
         cookie_val = f'vc_sso_sid={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400'
-        self._redirect('/', extra_headers=[('Set-Cookie', cookie_val)])
+        own_origin = self._get_origin(cfg)
+        if next_url.startswith('http') and not next_url.startswith(own_origin):
+            one_time = secrets.token_urlsafe(24)
+            with LOCK:
+                for k in [k for k, v in ONE_TIME_CODES.items() if now - v['ts'] > 120]:
+                    del ONE_TIME_CODES[k]
+                ONE_TIME_CODES[one_time] = {'user': user_obj, 'ts': now}
+            sep = '#' if '#' not in next_url else '&'
+            self._redirect(f'{next_url}{sep}sso_code={urllib.parse.quote(one_time)}', extra_headers=[('Set-Cookie', cookie_val)])
+            return
+
+        self._redirect(next_url, extra_headers=[('Set-Cookie', cookie_val)])
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        for k, v in self._cors_headers():
+            self.send_header(k, v)
+        self.end_headers()
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -235,8 +293,19 @@ class PG17Handler(SimpleHTTPRequestHandler):
             })
             return
 
+        if parsed.path == '/auth/exchange':
+            qs = urllib.parse.parse_qs(parsed.query)
+            one_time = qs.get('code', [''])[0]
+            with LOCK:
+                entry = ONE_TIME_CODES.pop(one_time, None)
+            if not entry or (time.time() - entry['ts'] > 120):
+                self._send_json(401, {'authenticated': False, 'error': 'Invalid or expired SSO code'})
+                return
+            self._send_json(200, {'authenticated': True, 'user': entry['user']})
+            return
+
         if parsed.path == '/auth/login':
-            self._handle_auth_login(cfg)
+            self._handle_auth_login(cfg, parsed.query)
             return
 
         if parsed.path == cfg['redirect_path'] or parsed.path == '/auth/auth-response':

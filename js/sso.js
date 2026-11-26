@@ -1,6 +1,8 @@
 // Microsoft Entra ID (Intel SSO) Client Manager
-// Supports confidential backend OAuth2 (/auth/login & /auth/auth-response in server.py)
-// AND browser MSAL PKCE fallback for static hosting (GitHub Pages / SharePoint).
+// Supports:
+//   1. Direct confidential OAuth2 backend (/auth/login & /auth/auth-response in server.py)
+//   2. Cross-origin SSO Bridge (?sso=https://ecebuildplus.app.intel.com)
+//   3. Browser MSAL / WebCrypto PKCE fallback (if SPA redirect URI is registered)
 (function (global) {
   const ENTRA_CONFIG = {
     clientId: '18f74cfa-4147-4a4d-8422-17d197a07b43',
@@ -8,17 +10,32 @@
     redirectPath: '/auth/auth-response',
     scopes: ['openid', 'profile', 'email', 'User.ReadBasic.All'],
   };
+  const BRIDGE_KEY = 'vc_sso_bridge_url';
+  const DIRECT_USER_KEY = 'vc_direct_sso_user';
 
   class SSOManager {
     constructor() {
-      this.mode = 'detecting'; // 'server' | 'msal-pkce' | 'unavailable'
+      this.mode = 'detecting'; // 'server' | 'bridge' | 'msal-pkce' | 'direct-pkce' | 'unavailable'
       this.user = null;
       this.msalApp = null;
+      this.bridgeUrl = '';
       this.lastError = '';
     }
 
     async init() {
-      // 1. Check if server.py OAuth2 backend (/auth/me) is running
+      // Check ?sso=https://ecebuildplus.app.intel.com bridge override
+      try {
+        const qs = new URLSearchParams(window.location.search);
+        const paramBridge = qs.get('sso');
+        if (paramBridge && paramBridge.startsWith('http')) {
+          this.bridgeUrl = paramBridge.replace(/\/+$/, '');
+          localStorage.setItem(BRIDGE_KEY, this.bridgeUrl);
+        } else {
+          this.bridgeUrl = (localStorage.getItem(BRIDGE_KEY) || '').replace(/\/+$/, '');
+        }
+      } catch (e) { /* ignore */ }
+
+      // 1. Check if current host serves server.py OAuth2 backend (/auth/me)
       try {
         const resp = await fetch('/auth/me', { credentials: 'same-origin', cache: 'no-store' });
         if (resp.ok) {
@@ -29,9 +46,41 @@
             return this.user;
           }
         }
-      } catch (e) { /* static hosting or local file without server.py SSO */ }
+      } catch (e) { /* static hosting without local /auth/me */ }
 
-      // 2. Fallback to MSAL Browser PKCE (for GitHub Pages / SharePoint SPA)
+      // 2. Check SSO Bridge return hash (#sso_code=...) or saved bridge URL (e.g. https://ecebuildplus.app.intel.com)
+      if (this.bridgeUrl) {
+        try {
+          const hashStr = window.location.hash.replace(/^#/, '');
+          const hp = new URLSearchParams(hashStr);
+          const ssoCode = hp.get('sso_code');
+          if (ssoCode) {
+            window.history.replaceState({}, '', window.location.pathname + window.location.search);
+            const exResp = await fetch(`${this.bridgeUrl}/auth/exchange?code=${encodeURIComponent(ssoCode)}`, { cache: 'no-store' });
+            if (exResp.ok) {
+              const exData = await exResp.json();
+              if (exData && exData.authenticated && exData.user) {
+                this.user = exData.user;
+                try { localStorage.setItem(DIRECT_USER_KEY, JSON.stringify(this.user)); } catch (e) { /* ignore */ }
+              }
+            }
+          }
+          const checkResp = await fetch(`${this.bridgeUrl}/auth/me`, { cache: 'no-store' });
+          if (checkResp.ok) {
+            const info = await checkResp.json();
+            if (info && info.configured) {
+              this.mode = 'bridge';
+              if (!this.user) {
+                const cached = localStorage.getItem(DIRECT_USER_KEY);
+                if (cached) this.user = JSON.parse(cached);
+              }
+              return this.user;
+            }
+          }
+        } catch (e) { /* bridge unreachable from current network */ }
+      }
+
+      // 3. Fallback to MSAL Browser PKCE (if SPA redirect URI registered for this host)
       if (typeof global.msal !== 'undefined' && global.msal.PublicClientApplication) {
         try {
           const redirectUri = `${window.location.origin}${window.location.pathname}`;
@@ -65,7 +114,7 @@
         }
       }
 
-      // 3. Zero-dependency Direct PKCE fallback if CDN unavailable
+      // 4. Zero-dependency Direct PKCE fallback if CDN blocked
       if (window.crypto && window.crypto.subtle) {
         this.mode = 'direct-pkce';
         try {
@@ -103,11 +152,11 @@
                 provider: 'intel-entra-pkce',
                 verified: true,
               };
-              try { localStorage.setItem('vc_direct_sso_user', JSON.stringify(this.user)); } catch (e) { /* ignore */ }
+              try { localStorage.setItem(DIRECT_USER_KEY, JSON.stringify(this.user)); } catch (e) { /* ignore */ }
               return this.user;
             }
           }
-          const cached = localStorage.getItem('vc_direct_sso_user');
+          const cached = localStorage.getItem(DIRECT_USER_KEY);
           if (cached) this.user = JSON.parse(cached);
         } catch (err) {
           this.lastError = err && err.message ? err.message : String(err);
@@ -163,7 +212,13 @@
     async signIn() {
       this.lastError = '';
       if (this.mode === 'server') {
-        window.location.assign('/auth/login');
+        const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.assign(`/auth/login?next=${nextUrl}`);
+        return { redirected: true };
+      }
+      if (this.mode === 'bridge' && this.bridgeUrl) {
+        const ret = encodeURIComponent(`${window.location.origin}${window.location.pathname}`);
+        window.location.assign(`${this.bridgeUrl}/auth/login?next=${ret}`);
         return { redirected: true };
       }
       if (this.mode === 'msal-pkce' && this.msalApp) {
@@ -178,7 +233,6 @@
           }
         } catch (err) {
           const msg = err && err.message ? err.message : String(err);
-          // Fallback to redirect flow if popup was blocked
           if (msg.includes('popup') || msg.includes('block')) {
             await this.msalApp.loginRedirect({
               scopes: ENTRA_CONFIG.scopes,
@@ -193,15 +247,21 @@
       if (window.crypto && window.crypto.subtle) {
         return this._startDirectPkceRedirect();
       }
-      throw new Error(this.lastError || 'SSO provider unavailable. Run local server.py or enable MSAL CDN.');
+      throw new Error(this.lastError || 'SSO provider unavailable.');
     }
 
     async signOut() {
       this.user = null;
-      try { localStorage.removeItem('vc_direct_sso_user'); } catch (e) { /* ignore */ }
+      try { localStorage.removeItem(DIRECT_USER_KEY); } catch (e) { /* ignore */ }
       if (this.mode === 'server') {
         try {
           await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+        } catch (e) { /* ignore */ }
+        return;
+      }
+      if (this.mode === 'bridge' && this.bridgeUrl) {
+        try {
+          await fetch(`${this.bridgeUrl}/auth/logout`, { method: 'POST' });
         } catch (e) { /* ignore */ }
         return;
       }
@@ -211,7 +271,6 @@
           try {
             await this.msalApp.logoutPopup({ account: accounts[0] });
           } catch (e) {
-            // Clear local MSAL cache entries if popup canceled/blocked
             Object.keys(localStorage).forEach((k) => {
               if (k.startsWith('msal.') || k.includes(ENTRA_CONFIG.clientId)) {
                 localStorage.removeItem(k);
@@ -224,6 +283,7 @@
 
     getModeLabel() {
       if (this.mode === 'server') return 'Entra ID OAuth2 (Server Backend)';
+      if (this.mode === 'bridge') return `Entra ID Bridge (${this.bridgeUrl})`;
       if (this.mode === 'msal-pkce') return 'Entra ID MSAL (Browser PKCE)';
       if (this.mode === 'direct-pkce') return 'Entra ID OAuth2 (Direct PKCE)';
       return 'Offline / Manual Fallback';
