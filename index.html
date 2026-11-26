@@ -706,11 +706,11 @@
       <div id="room-name">Floor 1 • Trojan Horse Atrium</div>
       <div id="floor-landmark-badge">Unique Item: Trojan Horse (Troy)</div>
       <div id="total-players-badge">11 Roster Users</div>
-      <div id="live-room-badge" style="font-size:11px;color:#38bdf8;margin-top:2px;">Live Room: Connecting...</div>
+      <div id="live-room-badge" class="admin-only" style="display:none;font-size:11px;color:#38bdf8;margin-top:2px;">Live Room: Connecting...</div>
       <div id="hud-user-badge"></div>
       <div id="hud-upgrade-note"></div>
       <div class="left-actions">
-        <button id="btn-toggle-drawer" class="hud-btn primary wide">Login / Live Room [U]</button>
+        <button id="btn-toggle-drawer" class="hud-btn primary wide">SSO Login [U]</button>
         <button id="btn-level-up-me" class="hud-btn upgrade" style="display:none">Level Up Me</button>
       </div>
     </div>
@@ -813,7 +813,10 @@
   <div id="roster-drawer">
     <div class="drawer-header">
       <h2>Virtual Intel Campus Access & Login</h2>
-      <button id="btn-close-drawer" class="mini-btn">Close</button>
+      <div style="display:flex;gap:5px;align-items:center;">
+        <button id="btn-toggle-super-box" class="mini-btn" type="button" title="Show/Hide Super User Control" style="color:#fde047;">👑 Admin</button>
+        <button id="btn-close-drawer" class="mini-btn">Close</button>
+      </div>
     </div>
 
     <div class="section-box" id="sso-box">
@@ -829,7 +832,7 @@
       </div>
     </div>
 
-    <div class="section-box" id="super-user-box">
+    <div class="section-box" id="super-user-box" style="display:none;">
       <div class="section-label" id="super-user-title">👑 Super User Control (Locked)</div>
       <form id="super-unlock-form" class="inline-form">
         <input id="super-pin-input" type="password" placeholder="Enter Super User PIN..." />
@@ -847,17 +850,17 @@
       </div>
     </div>
 
-    <div class="section-box" id="admin-excel-box">
+    <div class="section-box admin-only" id="admin-excel-box" style="display:none;">
       <div class="section-label">2. Excel / CSV Roster</div>
       <div class="excel-btn-row">
         <button id="btn-upload-excel" class="hud-btn primary admin-only" type="button">Upload .xlsx / .csv</button>
-        <button id="btn-download-excel" class="hud-btn" type="button">Export .xlsx</button>
+        <button id="btn-download-excel" class="hud-btn admin-only" type="button">Export .xlsx</button>
         <button id="btn-reset-roster" class="hud-btn admin-only" type="button">Reset</button>
       </div>
       <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv,.tsv" style="display:none" />
     </div>
 
-    <div class="section-box admin-only" id="admin-add-user-box">
+    <div class="section-box admin-only" id="admin-add-user-box" style="display:none;">
       <div class="section-label">3. Add / Update User Floor (1–6)</div>
       <form id="add-user-form" class="inline-form" style="flex-wrap:wrap">
         <input id="add-name" type="text" placeholder="Name" style="flex:1.2" required />
@@ -874,7 +877,7 @@
       </form>
     </div>
 
-    <div class="section-box">
+    <div class="section-box admin-only" id="live-room-box" style="display:none;">
       <div class="section-label">4. Live Multi-User Room (Zero-Account Sync)</div>
       <form id="room-form" class="inline-form">
         <input id="room-id-input" type="text" placeholder="Room ID (e.g. intel-campus-live)" />
@@ -890,8 +893,8 @@
       </div>
     </div>
 
-    <div class="section-label" id="roster-summary">Roster Users</div>
-    <div id="roster-list"></div>
+    <div class="section-label admin-only" id="roster-summary" style="display:none;">Roster Users</div>
+    <div id="roster-list" class="admin-only" style="display:none;"></div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
@@ -903,8 +906,8 @@
   <script src="js/mesher.js"></script>
   <script src="js/players.js"></script>
   <script src="js/items.js"></script>
-  <script src="js/roster.js?v=20261126d"></script>
-  <script src="js/sso.js?v=20261126d"></script>
-  <script src="js/main.js?v=20261126d"></script>
+  <script src="js/roster.js?v=20261126e"></script>
+  <script src="js/sso.js?v=20261126e"></script>
+  <script src="js/main.js?v=20261126e"></script>
 </body>
 </html>

@@ -266,6 +266,7 @@
     let onGround = true;
     let isNight = false;
     let drawerOpen = false;
+    let superBoxExpanded = false;
     let localCheerTimer = 0;
     let lastDeniedAt = 0;
     let walkTarget = null;
@@ -1060,14 +1061,18 @@
       const btnUp = document.getElementById('btn-level-up-me');
       btnUp.style.display = roster.isSuperUser ? 'block' : 'none';
       btnDrawer.classList.toggle('wide', !roster.isSuperUser);
-      btnDrawer.textContent = roster.isSuperUser ? 'Admin / Users [U]' : 'Login / Live Room [U]';
+      btnDrawer.textContent = roster.isSuperUser ? 'Admin / Users [U]' : 'SSO Login [U]';
       btnUp.disabled = maxFloor.level >= 6;
       btnUp.textContent = maxFloor.level >= 6 ? 'Max Floor (F6)' : `Level Up Me → F${nextLvl}`;
 
-      // Toggle Super User controls in drawer
+      // Toggle Super User controls in drawer (hidden by default unless toggled or unlocked)
+      const superBox = document.getElementById('super-user-box');
       const unlockForm = document.getElementById('super-unlock-form');
       const superActiveBox = document.getElementById('super-active-controls');
       const superTitle = document.getElementById('super-user-title');
+      if (superBox) {
+        superBox.style.display = (roster.isSuperUser || superBoxExpanded) ? 'flex' : 'none';
+      }
       if (unlockForm && superActiveBox && superTitle) {
         unlockForm.style.display = roster.isSuperUser ? 'none' : 'flex';
         superActiveBox.style.display = roster.isSuperUser ? 'flex' : 'none';
@@ -1251,6 +1256,13 @@
       setDrawerOpen(!drawerOpen);
     });
     document.getElementById('btn-close-drawer').addEventListener('click', () => setDrawerOpen(false));
+    const btnToggleSuperBox = document.getElementById('btn-toggle-super-box');
+    if (btnToggleSuperBox) {
+      btnToggleSuperBox.addEventListener('click', () => {
+        superBoxExpanded = !superBoxExpanded;
+        renderUserHud();
+      });
+    }
 
     const btnSsoLogin = document.getElementById('btn-sso-login');
     const btnSsoLogout = document.getElementById('btn-sso-logout');
@@ -1308,6 +1320,7 @@
       const ok = roster.verifyAndUnlockSuperUser(pinEl.value);
       pinEl.value = '';
       if (ok) {
+        superBoxExpanded = true;
         sfx.levelUp();
         showToast('👑 Super User unlocked! You can now change everyone\'s floor access live.', false);
       } else {
@@ -1317,6 +1330,7 @@
     });
 
     document.getElementById('btn-lock-super').addEventListener('click', () => {
+      superBoxExpanded = false;
       roster.lockSuperUser();
       showToast('🔒 Super User mode locked.', false);
     });
