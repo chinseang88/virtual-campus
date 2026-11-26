@@ -197,13 +197,24 @@
       return { ...base, ...ssoMeta };
     }
 
-    login(name) {
-      const clean = String(name || '').trim();
-      if (!clean) return null;
-      let u = this.findUser(clean);
+    login(nameOrEmail) {
+      const raw = String(nameOrEmail || '').trim();
+      if (!raw) return null;
+      const isEmail = raw.includes('@');
+      const localPart = isEmail ? raw.split('@')[0] : raw;
+      const prettyName = localPart
+        .replace(/[._-]+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+
+      let u = this.findUser(raw) || this.findUser(localPart) || this.findUser(prettyName);
       if (!u) {
         // Unknown visitors start at Floor 1 only (not broadcast as an authoritative roster edit)
-        u = { name: clean.slice(0, 24), level: 1, role: 'Guest' };
+        u = {
+          name: (isEmail ? prettyName : raw).slice(0, 24),
+          level: 1,
+          role: isEmail ? raw.slice(0, 40) : 'Visitor',
+        };
         this.users.push(u);
       }
       this.activeUserName = u.name;

@@ -11,29 +11,50 @@
     scopes: ['openid', 'profile', 'email', 'User.ReadBasic.All'],
   };
   const BRIDGE_KEY = 'vc_sso_bridge_url';
+  const SPA_CLIENT_KEY = 'vc_spa_client_id';
   const DIRECT_USER_KEY = 'vc_direct_sso_user';
 
   class SSOManager {
     constructor() {
-      this.mode = 'detecting'; // 'server' | 'bridge' | 'msal-pkce' | 'direct-pkce' | 'unavailable'
+      this.mode = 'detecting'; // 'server' | 'bridge' | 'msal-pkce' | 'direct-pkce' | 'blocked-origin' | 'unavailable'
       this.user = null;
       this.msalApp = null;
       this.bridgeUrl = '';
+      this.customClientId = '';
+      this.canLaunchEntra = false;
       this.lastError = '';
     }
 
+    setConfig({ bridgeUrl = '', clientId = '' }) {
+      try {
+        if (bridgeUrl) localStorage.setItem(BRIDGE_KEY, bridgeUrl.replace(/\/+$/, ''));
+        else localStorage.removeItem(BRIDGE_KEY);
+        if (clientId) localStorage.setItem(SPA_CLIENT_KEY, clientId.trim());
+        else localStorage.removeItem(SPA_CLIENT_KEY);
+      } catch (e) { /* ignore */ }
+    }
+
     async init() {
-      // Check ?sso=https://ecebuildplus.app.intel.com bridge override
+      // Check URL params / saved config for SSO bridge or custom SPA Client ID
       try {
         const qs = new URLSearchParams(window.location.search);
         const paramBridge = qs.get('sso');
+        const paramCid = qs.get('sso_client_id');
         if (paramBridge && paramBridge.startsWith('http')) {
           this.bridgeUrl = paramBridge.replace(/\/+$/, '');
           localStorage.setItem(BRIDGE_KEY, this.bridgeUrl);
         } else {
           this.bridgeUrl = (localStorage.getItem(BRIDGE_KEY) || '').replace(/\/+$/, '');
         }
+        if (paramCid) {
+          this.customClientId = paramCid.trim();
+          localStorage.setItem(SPA_CLIENT_KEY, this.customClientId);
+        } else {
+          this.customClientId = (localStorage.getItem(SPA_CLIENT_KEY) || '').trim();
+        }
       } catch (e) { /* ignore */ }
+
+      const activeClientId = this.customClientId || ENTRA_CONFIG.clientId;
 
       // 1. Check if current host serves server.py OAuth2 backend (/auth/me)
       try {
@@ -42,6 +63,7 @@
           const data = await resp.json();
           if (data && data.configured) {
             this.mode = 'server';
+            this.canLaunchEntra = true;
             this.user = data.authenticated && data.user ? data.user : null;
             return this.user;
           }
@@ -70,6 +92,7 @@
             const info = await checkResp.json();
             if (info && info.configured) {
               this.mode = 'bridge';
+              this.canLaunchEntra = true;
               if (!this.user) {
                 const cached = localStorage.getItem(DIRECT_USER_KEY);
                 if (cached) this.user = JSON.parse(cached);
@@ -77,16 +100,23 @@
               return this.user;
             }
           }
-        } catch (e) { /* bridge unreachable from current network */ }
+        } catch (e) { /* bridge unreachable or lacks /auth/me CORS */ }
       }
 
-      // 3. Fallback to MSAL Browser PKCE (if SPA redirect URI registered for this host)
+      // 3. Static GitHub Pages without SPA-registered Client ID cannot use 18f74cfa-... (Microsoft throws AADSTS50011)
+      if (!this.customClientId) {
+        this.mode = 'blocked-origin';
+        this.canLaunchEntra = false;
+        return null;
+      }
+
+      // 4. Custom SPA Client ID provided -> use MSAL Browser PKCE
       if (typeof global.msal !== 'undefined' && global.msal.PublicClientApplication) {
         try {
           const redirectUri = `${window.location.origin}${window.location.pathname}`;
           this.msalApp = new global.msal.PublicClientApplication({
             auth: {
-              clientId: ENTRA_CONFIG.clientId,
+              clientId: activeClientId,
               authority: ENTRA_CONFIG.authority,
               redirectUri,
             },
@@ -105,6 +135,7 @@
             if (accounts && accounts.length > 0) account = accounts[0];
           }
           this.mode = 'msal-pkce';
+          this.canLaunchEntra = true;
           if (account) {
             this.user = this._accountToUser(account);
           }
@@ -211,6 +242,9 @@
 
     async signIn() {
       this.lastError = '';
+      if (this.mode === 'blocked-origin' && !this.customClientId) {
+        throw new Error('Entra ID App 18f74cfa-... rejects github.io (AADSTS50011). Click ⚙️ to set an SPA Client ID, host server.py on ecebuildplus.app.intel.com, or sign in with your @intel.com email above.');
+      }
       if (this.mode === 'server') {
         const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.assign(`/auth/login?next=${nextUrl}`);
@@ -272,7 +306,7 @@
             await this.msalApp.logoutPopup({ account: accounts[0] });
           } catch (e) {
             Object.keys(localStorage).forEach((k) => {
-              if (k.startsWith('msal.') || k.includes(ENTRA_CONFIG.clientId)) {
+              if (k.startsWith('msal.') || k.includes(this.customClientId || ENTRA_CONFIG.clientId)) {
                 localStorage.removeItem(k);
               }
             });
@@ -282,11 +316,12 @@
     }
 
     getModeLabel() {
-      if (this.mode === 'server') return 'Entra ID OAuth2 (Server Backend)';
+      if (this.mode === 'server') return 'Entra ID OAuth2 (Server Backend — Ready)';
       if (this.mode === 'bridge') return `Entra ID Bridge (${this.bridgeUrl})`;
-      if (this.mode === 'msal-pkce') return 'Entra ID MSAL (Browser PKCE)';
+      if (this.mode === 'msal-pkce') return 'Entra ID MSAL (Custom SPA Client ID)';
       if (this.mode === 'direct-pkce') return 'Entra ID OAuth2 (Direct PKCE)';
-      return 'Offline / Manual Fallback';
+      if (this.mode === 'blocked-origin') return 'GitHub Pages: Use @intel.com login above, or ⚙️ set SPA ID / ecebuildplus bridge';
+      return 'Offline / Name Login';
     }
   }
 
