@@ -1507,93 +1507,54 @@
 
     const meetingBanner = document.getElementById('meeting-banner');
     const meetingStatusText = document.getElementById('meeting-status-text');
-    const btnMeetingJoin = document.getElementById('btn-meeting-join');
     const btnMeetingNote = document.getElementById('btn-meeting-note');
     const btnMeetingCheers = document.getElementById('btn-meeting-cheers');
     const btnMeetingEnd = document.getElementById('btn-meeting-end');
-    let remoteMeetingTarget = null;
     let meetingTimeout = null;
 
+    // Team Meeting stays strictly inside the local 3D map (gathers virtual map avatars only, never calls real users)
     function startTeamMeeting(customCenter = null) {
-      const me = roster.getActiveUser();
       const center = customCenter || { x: playerPos.x, y: playerPos.y, z: playerPos.z };
       const fl = world.getFloorAtY(center.y);
       const count = crowd.gatherForMeeting(center, fl, 30);
-      remoteMeetingTarget = null;
-      if (btnMeetingJoin) btnMeetingJoin.style.display = 'none';
       if (meetingStatusText) {
-        meetingStatusText.textContent = `👥 Team Meeting on Floor ${fl.level} (${count + 1} people gathered)`;
+        meetingStatusText.textContent = `👥 Map Huddle on Floor ${fl.level} (${count} map bots gathered)`;
       }
       if (meetingBanner) meetingBanner.classList.add('open');
       if (meetingTimeout) clearTimeout(meetingTimeout);
       meetingTimeout = setTimeout(() => {
-        if (meetingBanner && !remoteMeetingTarget) meetingBanner.classList.remove('open');
+        if (meetingBanner) meetingBanner.classList.remove('open');
       }, 30000);
 
       sfx.elevator();
       spawnParticles(center.x, center.y + 0.5, center.z, '#4ade80', 18);
-      const msg = `👥 ${me.name} called a Team Meeting on Floor ${fl.level} (${fl.shortName}) — gathering all ${count} teammates!`;
+      const msg = `👥 Map Team Huddle on Floor ${fl.level} (${fl.shortName}) — gathered ${count} map characters inside the campus!`;
       showToast(msg, false);
       pushChat('', msg, true);
-      publishCampusEvent({
-        type: 'meeting',
-        name: me.name,
-        level: fl.level,
-        x: Number(center.x.toFixed(2)),
-        y: Number(center.y.toFixed(2)),
-        z: Number(center.z.toFixed(2)),
-      });
     }
 
     function endTeamMeeting() {
       crowd.endMeeting();
-      remoteMeetingTarget = null;
       if (meetingTimeout) { clearTimeout(meetingTimeout); meetingTimeout = null; }
       if (meetingBanner) meetingBanner.classList.remove('open');
-      showToast('👥 Team Meeting ended — everyone is returning to their floors.', false);
+      showToast('👥 Map Huddle ended — characters returned to patrolling.', false);
     }
 
     function handleRemoteCampusEvent(evt) {
       if (evt.type === 'cheers') {
         triggerCheers(evt);
-      } else if (evt.type === 'meeting') {
-        remoteMeetingTarget = evt;
-        if (meetingStatusText) {
-          meetingStatusText.textContent = `👥 ${evt.name} started a Team Meeting on Floor ${evt.level}!`;
-        }
-        if (btnMeetingJoin) btnMeetingJoin.style.display = '';
-        if (meetingBanner) meetingBanner.classList.add('open');
-        if (meetingTimeout) clearTimeout(meetingTimeout);
-        meetingTimeout = setTimeout(() => {
-          if (meetingBanner) meetingBanner.classList.remove('open');
-          remoteMeetingTarget = null;
-        }, 30000);
-        showToast(`👥 ${evt.name} summoned a Team Meeting on Floor ${evt.level}! Click Join Meeting to teleport.`, false);
-        pushChat('', `👥 Live Team Meeting invite from ${evt.name} on Floor ${evt.level}!`, true);
       }
     }
 
-    if (btnMeetingJoin) {
-      btnMeetingJoin.addEventListener('click', () => {
-        if (!remoteMeetingTarget) return;
-        const targetFl = PG17_LEVELS.find((l) => l.level === remoteMeetingTarget.level);
-        if (targetFl && teleportToFloor(targetFl, true)) {
-          const ok = setSmartWalkTarget(remoteMeetingTarget.x, remoteMeetingTarget.z);
-          if (!ok) playerPos.set(remoteMeetingTarget.x, targetFl.standY, remoteMeetingTarget.z);
-          btnMeetingJoin.style.display = 'none';
-        }
-      });
-    }
     if (btnMeetingNote) {
       btnMeetingNote.addEventListener('click', () => {
-        const note = prompt('Broadcast Team Meeting Note to Virtual Intel Campus:');
+        const note = prompt('Add local Map Huddle note to Campus Wall:');
         if (note && note.trim()) {
           const me = roster.getActiveUser();
           const fl = world.getFloorAtY(playerPos.y).level;
-          const full = `📋 [Meeting Note] ${note.trim()}`;
+          const full = `📋 [Map Huddle Note] ${note.trim()}`;
           pushChat(`${me.name} @F${fl}`, full);
-          sendLiveChat(`${me.name} @F${fl}`, full);
-          showToast('📋 Meeting note shared with campus!', false);
+          showToast('📋 Note posted locally on your Campus Wall!', false);
         }
       });
     }

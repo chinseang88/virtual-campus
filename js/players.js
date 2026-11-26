@@ -862,18 +862,20 @@
         npc.meetingHost = { x: centerPos.x, z: centerPos.z };
 
         const angle = (idx / total) * Math.PI * 2;
-        const slotX = Math.max(6, Math.min(61, centerPos.x + Math.cos(angle) * radius));
-        const slotZ = Math.max(9, Math.min(32, centerPos.z + Math.sin(angle) * radius));
+        const rawX = Math.max(6, Math.min(61, centerPos.x + Math.cos(angle) * radius));
+        const rawZ = Math.max(9, Math.min(32, centerPos.z + Math.sin(angle) * radius));
+        const nearGoal = targetNav.findNearestWalkable(Math.floor(rawX), Math.floor(rawZ), 5) || { x: centerPos.x, z: centerPos.z };
+        const slotX = nearGoal.x;
+        const slotZ = nearGoal.z;
         npc.meetingSlot = { x: slotX, z: slotZ };
 
         if (onOtherFloor) {
-          // Off-floor colleagues arrive cleanly through this floor's Lift Lobby!
-          const startX = 30.5 + (idx % 7) * 1.1;
-          const startZ = 9.5 + (idx % 2) * 1.1;
-          npc.pos.set(startX, floorObj.standY, startZ);
+          // Off-floor map avatars step out from this floor's Lift Lobby cleanly!
+          const startSpot = targetNav.findNearestWalkable(30 + (idx % 8), 11 + (idx % 2), 4) || { x: 34.5, z: 12.5 };
+          npc.pos.set(startSpot.x, floorObj.standY, startSpot.z);
           npc.vel.set(0, 0, 0);
         }
-        npc.path = targetNav.findPath(npc.pos.x, npc.pos.z, slotX, slotZ);
+        npc.path = targetNav.findPlayerPath(npc.pos.x, npc.pos.z, slotX, slotZ);
         npc.waitTimer = 0;
         gathered++;
       });
