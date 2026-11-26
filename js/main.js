@@ -51,6 +51,12 @@
       this.playTone(523.25, 0.18, 0.07, 'sine');
       setTimeout(() => this.playTone(659.25, 0.25, 0.07, 'sine'), 140);
     }
+    cheer() {
+      this.ensure();
+      [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, idx) => {
+        setTimeout(() => this.playTone(f, 0.2, 0.085, 'triangle'), idx * 80);
+      });
+    }
   }
 
   function detectZone(world, x, y, z) {
@@ -258,6 +264,7 @@
     let onGround = true;
     let isNight = false;
     let drawerOpen = false;
+    let localCheerTimer = 0;
     let lastDeniedAt = 0;
     let walkTarget = null;
     let walkPath = [];
@@ -503,6 +510,23 @@
     function triggerItem(item) {
       if (!item) return;
       sfx.ensure();
+      if (item.toolAction === 'open_circuit') {
+        item.trigger(sfx, playerPos);
+        spawnParticles(item.group.position.x, item.group.position.y + 0.8, item.group.position.z, '#38bdf8', 14);
+        openCircuitReader();
+        return;
+      }
+      if (item.toolAction === 'start_meeting') {
+        item.trigger(sfx, playerPos);
+        spawnParticles(item.group.position.x, item.group.position.y + 0.8, item.group.position.z, '#4ade80', 16);
+        startTeamMeeting({ x: item.group.position.x, y: item.group.position.y, z: item.group.position.z });
+        return;
+      }
+      if (item.toolAction === 'trigger_cheers') {
+        item.trigger(sfx, playerPos);
+        triggerCheers();
+        return;
+      }
       const msg = item.trigger(sfx, playerPos);
       spawnParticles(item.group.position.x, item.group.position.y + 0.5, item.group.position.z, '#fde047', 14);
       openPropDialog(`✨ ${item.name}`, msg);
@@ -710,7 +734,7 @@
           mqttConnected = true;
           if (mqttFallbackTimer) { clearTimeout(mqttFallbackTimer); mqttFallbackTimer = null; }
           const pfx = topicPrefix();
-          client.subscribe([`${pfx}/pos`, `${pfx}/chat`, `${pfx}/roster`]);
+          client.subscribe([`${pfx}/pos`, `${pfx}/chat`, `${pfx}/roster`, `${pfx}/event`]);
           updateSyncStatus(`🟢 Live Room: ${roomId}`, true);
           publishMqttPos();
         });
@@ -742,6 +766,9 @@
                 origRosterSave(false);
                 isApplyingRemoteRoster = false;
               }
+            } else if (topic === `${pfx}/event`) {
+              if (!msg || msg.id === myClientId) return;
+              handleRemoteCampusEvent(msg);
             }
           } catch (e) { /* ignore malformed packet */ }
         });
@@ -1353,13 +1380,15 @@
       });
     }
 
-    // Camera Mode, Zoom & Slicer Controls
+    // Camera Mode, Zoom & Universal Floor Tools (Circuit Reader, Team Meeting, Cheers)
     const btnCamera = document.getElementById('btn-camera');
-    const btnSlice = document.getElementById('btn-slice');
     const btnTime = document.getElementById('btn-time');
     const btnZoomOut = document.getElementById('btn-zoom-out');
     const btnZoomReset = document.getElementById('btn-zoom-reset');
     const btnZoomIn = document.getElementById('btn-zoom-in');
+    const btnCircuit = document.getElementById('btn-circuit');
+    const btnMeeting = document.getElementById('btn-meeting');
+    const btnCheers = document.getElementById('btn-cheers');
 
     let targetZoom = 1.0;
     let smoothZoom = 1.0;
@@ -1375,17 +1404,16 @@
 
     function updateButtons() {
       btnCamera.textContent = `View: ${CAMERA_MODES[cameraMode]} [C]`;
-      btnSlice.textContent = `Slice: ${sliceFloors ? 'ON' : 'OFF'} [R]`;
       btnTime.textContent = `${isNight ? 'Night' : 'Day'} [T]`;
       if (btnZoomReset) {
         btnZoomReset.textContent = `${Math.round(100 / targetZoom)}%`;
       }
 
       if (cameraMode === 0) {
-        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> Scroll or +/− to zoom. Click floor to walk, click person/item or [E]!';
+        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> Scroll/+/- zoom. Click floor to walk, [M] Meet, [H] Cheers, [E] Interact!';
         crosshairEl.style.display = 'none';
       } else if (cameraMode === 1) {
-        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Scroll or +/− to zoom out/in. Click floor to walk or click item!';
+        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Scroll/+/- zoom out/in. Click floor to walk, [M] Meet, [H] Cheers!';
         crosshairEl.style.display = 'none';
       } else {
         comfortTipEl.innerHTML = '<strong>1st Person:</strong> Drag or A/D to look 360°, Scroll/+/- to zoom. [C] to walk again.';
@@ -1409,13 +1437,6 @@
       renderFloorButtons();
     }
 
-    function toggleSlice() {
-      sliceFloors = !sliceFloors;
-      viewedFloorObj = world.getFloorAtY(playerPos.y);
-      rebuildWorldMesh();
-      updateButtons();
-    }
-
     function toggleTimeOfDay() {
       isNight = !isNight;
       if (isNight) {
@@ -1434,15 +1455,258 @@
       updateButtons();
     }
 
+    // --- Universal Tools (All Floors F1-F6): circuit.intel.com Reader, Team Meeting & Cheers ---
+    function publishCampusEvent(evt) {
+      if (!mqttClient || !mqttConnected) return;
+      try {
+        mqttClient.publish(`${topicPrefix()}/event`, JSON.stringify({
+          ...evt,
+          id: myClientId,
+          ts: Date.now(),
+        }));
+      } catch (e) { /* ignore */ }
+    }
+
+    const CONFETTI_COLORS = ['#fde047', '#38bdf8', '#4ade80', '#f472b6', '#fb923c', '#a855f7'];
+    function spawnConfettiBurst(cx, cy, cz) {
+      CONFETTI_COLORS.forEach((c) => spawnParticles(cx, cy + 0.6, cz, c, 8));
+    }
+
+    function triggerCheers(fromRemote = null) {
+      sfx.cheer();
+      if (fromRemote) {
+        spawnConfettiBurst(fromRemote.x || playerPos.x, fromRemote.y || playerPos.y, fromRemote.z || playerPos.z);
+        crowd.cheerAllOnFloor(fromRemote.y || playerPos.y, 3.8);
+        const msg = `🥂 ${fromRemote.name} cheers from Floor ${fromRemote.level}: Let's celebrate! 🎉`;
+        showToast(msg, false);
+        pushChat('', msg, true);
+        return;
+      }
+      const me = roster.getActiveUser();
+      const fl = world.getFloorAtY(playerPos.y);
+      localCheerTimer = 3.8;
+      crowd.cheerAllOnFloor(fl.standY, 3.8);
+      spawnConfettiBurst(playerPos.x, playerPos.y, playerPos.z);
+      for (const npc of crowd.npcs) {
+        if (Math.abs(npc.pos.y - fl.standY) < 2.5) {
+          spawnParticles(npc.pos.x, npc.pos.y + 0.6, npc.pos.z, CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)], 6);
+        }
+      }
+      const msg = `🥂 ${me.name} raised a glass on Floor ${fl.level} (${fl.shortName}): CHEERS! 🎉`;
+      showToast(msg, false);
+      pushChat('', msg, true);
+      publishCampusEvent({
+        type: 'cheers',
+        name: me.name,
+        level: fl.level,
+        x: Number(playerPos.x.toFixed(2)),
+        y: Number(playerPos.y.toFixed(2)),
+        z: Number(playerPos.z.toFixed(2)),
+      });
+    }
+
+    const meetingBanner = document.getElementById('meeting-banner');
+    const meetingStatusText = document.getElementById('meeting-status-text');
+    const btnMeetingJoin = document.getElementById('btn-meeting-join');
+    const btnMeetingNote = document.getElementById('btn-meeting-note');
+    const btnMeetingCheers = document.getElementById('btn-meeting-cheers');
+    const btnMeetingEnd = document.getElementById('btn-meeting-end');
+    let remoteMeetingTarget = null;
+    let meetingTimeout = null;
+
+    function startTeamMeeting(customCenter = null) {
+      const me = roster.getActiveUser();
+      const center = customCenter || { x: playerPos.x, y: playerPos.y, z: playerPos.z };
+      const fl = world.getFloorAtY(center.y);
+      const count = crowd.gatherForMeeting(center, fl, 30);
+      remoteMeetingTarget = null;
+      if (btnMeetingJoin) btnMeetingJoin.style.display = 'none';
+      if (meetingStatusText) {
+        meetingStatusText.textContent = `👥 Team Meeting on Floor ${fl.level} (${count + 1} people gathered)`;
+      }
+      if (meetingBanner) meetingBanner.classList.add('open');
+      if (meetingTimeout) clearTimeout(meetingTimeout);
+      meetingTimeout = setTimeout(() => {
+        if (meetingBanner && !remoteMeetingTarget) meetingBanner.classList.remove('open');
+      }, 30000);
+
+      sfx.elevator();
+      spawnParticles(center.x, center.y + 0.5, center.z, '#4ade80', 18);
+      const msg = `👥 ${me.name} called a Team Meeting on Floor ${fl.level} (${fl.shortName}) — gathering all ${count} teammates!`;
+      showToast(msg, false);
+      pushChat('', msg, true);
+      publishCampusEvent({
+        type: 'meeting',
+        name: me.name,
+        level: fl.level,
+        x: Number(center.x.toFixed(2)),
+        y: Number(center.y.toFixed(2)),
+        z: Number(center.z.toFixed(2)),
+      });
+    }
+
+    function endTeamMeeting() {
+      crowd.endMeeting();
+      remoteMeetingTarget = null;
+      if (meetingTimeout) { clearTimeout(meetingTimeout); meetingTimeout = null; }
+      if (meetingBanner) meetingBanner.classList.remove('open');
+      showToast('👥 Team Meeting ended — everyone is returning to their floors.', false);
+    }
+
+    function handleRemoteCampusEvent(evt) {
+      if (evt.type === 'cheers') {
+        triggerCheers(evt);
+      } else if (evt.type === 'meeting') {
+        remoteMeetingTarget = evt;
+        if (meetingStatusText) {
+          meetingStatusText.textContent = `👥 ${evt.name} started a Team Meeting on Floor ${evt.level}!`;
+        }
+        if (btnMeetingJoin) btnMeetingJoin.style.display = '';
+        if (meetingBanner) meetingBanner.classList.add('open');
+        if (meetingTimeout) clearTimeout(meetingTimeout);
+        meetingTimeout = setTimeout(() => {
+          if (meetingBanner) meetingBanner.classList.remove('open');
+          remoteMeetingTarget = null;
+        }, 30000);
+        showToast(`👥 ${evt.name} summoned a Team Meeting on Floor ${evt.level}! Click Join Meeting to teleport.`, false);
+        pushChat('', `👥 Live Team Meeting invite from ${evt.name} on Floor ${evt.level}!`, true);
+      }
+    }
+
+    if (btnMeetingJoin) {
+      btnMeetingJoin.addEventListener('click', () => {
+        if (!remoteMeetingTarget) return;
+        const targetFl = PG17_LEVELS.find((l) => l.level === remoteMeetingTarget.level);
+        if (targetFl && teleportToFloor(targetFl, true)) {
+          const ok = setSmartWalkTarget(remoteMeetingTarget.x, remoteMeetingTarget.z);
+          if (!ok) playerPos.set(remoteMeetingTarget.x, targetFl.standY, remoteMeetingTarget.z);
+          btnMeetingJoin.style.display = 'none';
+        }
+      });
+    }
+    if (btnMeetingNote) {
+      btnMeetingNote.addEventListener('click', () => {
+        const note = prompt('Broadcast Team Meeting Note to Virtual Intel Campus:');
+        if (note && note.trim()) {
+          const me = roster.getActiveUser();
+          const fl = world.getFloorAtY(playerPos.y).level;
+          const full = `📋 [Meeting Note] ${note.trim()}`;
+          pushChat(`${me.name} @F${fl}`, full);
+          sendLiveChat(`${me.name} @F${fl}`, full);
+          showToast('📋 Meeting note shared with campus!', false);
+        }
+      });
+    }
+    if (btnMeetingCheers) btnMeetingCheers.addEventListener('click', () => triggerCheers());
+    if (btnMeetingEnd) btnMeetingEnd.addEventListener('click', () => endTeamMeeting());
+
+    // circuit.intel.com Reader Modal
+    const CIRCUIT_ARTICLES = [
+      {
+        title: 'Intel Foundry & Next-Gen Silicon Milestones on Circuit',
+        tag: 'Engineering • circuit.intel.com',
+        date: 'Latest Digest',
+        summary: 'Teams across Malaysia, Hillsboro, and Israel celebrate RibbonFET & PowerVia ramp milestones with automated packaging breakthroughs.',
+      },
+      {
+        title: 'Virtual Intel Campus (F1–F6): Interactive Collaboration Spaces',
+        tag: 'Penang PG17 • Campus Life',
+        date: 'Featured',
+        summary: 'Explore Floors 1–6 including Sports Track & Pitch, Forest Yoga Studio, Ocean Lounge, Industrial Main Gym, and Floor 6 VIP Map Sky Lounge.',
+      },
+      {
+        title: 'Core Ultra AI PC & Edge Developer Hackathon Highlights',
+        tag: 'AI & Software • Innovation',
+        date: 'This Week',
+        summary: 'See how engineers build ultra-responsive local AI assistants and real-time 3D interactive tools running seamlessly at the edge.',
+      },
+      {
+        title: 'Wellness, Fitness & Sustainability Across Campus',
+        tag: 'People & Planet • Circuit',
+        date: 'Community',
+        summary: 'Join Floor 2 Sprint Track, Floor 3 Yoga & Spin Studios, Floor 4 Ping-Pong Relax Corner, and Floor 5 Gym challenges with your team!',
+      },
+    ];
+
+    const circuitModal = document.getElementById('circuit-modal');
+    const circuitDigestBody = document.getElementById('circuit-digest-body');
+    const circuitIframeWrap = document.getElementById('circuit-iframe-wrap');
+    const circuitIframe = document.getElementById('circuit-iframe');
+    const tabDigest = document.getElementById('tab-circuit-digest');
+    const tabLive = document.getElementById('tab-circuit-live');
+
+    function renderCircuitDigest() {
+      if (!circuitDigestBody) return;
+      circuitDigestBody.innerHTML = '';
+      CIRCUIT_ARTICLES.forEach((art) => {
+        const card = document.createElement('div');
+        card.className = 'circuit-article';
+        card.innerHTML = `
+          <div class="circuit-meta"><span>${art.tag}</span><span>${art.date}</span></div>
+          <h4>${art.title}</h4>
+          <p>${art.summary}</p>
+          <div style="display:flex;gap:6px;margin-top:4px;flex-wrap:wrap;">
+            <a href="https://circuit.intel.com/" target="_blank" rel="noopener noreferrer" class="mini-btn" style="background:#0068b5;color:#fff;text-decoration:none;">Read on circuit.intel.com ↗</a>
+            <button type="button" class="mini-btn share-circuit-btn">📢 Share to Campus Wall</button>
+          </div>
+        `;
+        card.querySelector('.share-circuit-btn').addEventListener('click', () => {
+          const me = roster.getActiveUser();
+          const fl = world.getFloorAtY(playerPos.y).level;
+          const text = `📰 Reading on circuit.intel.com: "${art.title}"`;
+          pushChat(`${me.name} @F${fl}`, text);
+          sendLiveChat(`${me.name} @F${fl}`, text);
+          showToast('📢 Shared Circuit headline to Campus Wall!', false);
+        });
+        circuitDigestBody.appendChild(card);
+      });
+    }
+
+    function openCircuitReader() {
+      renderCircuitDigest();
+      if (circuitModal) circuitModal.classList.add('open');
+      sfx.blip();
+    }
+    function closeCircuitReader() {
+      if (circuitModal) circuitModal.classList.remove('open');
+    }
+
+    if (tabDigest && tabLive && circuitDigestBody && circuitIframeWrap) {
+      tabDigest.addEventListener('click', () => {
+        circuitDigestBody.style.display = 'flex';
+        circuitIframeWrap.classList.remove('active');
+        tabDigest.style.background = '#0284c7'; tabDigest.style.color = '#fff';
+        tabLive.style.background = ''; tabLive.style.color = '';
+      });
+      tabLive.addEventListener('click', () => {
+        circuitDigestBody.style.display = 'none';
+        circuitIframeWrap.classList.add('active');
+        if (circuitIframe && !circuitIframe.src) {
+          circuitIframe.src = 'https://circuit.intel.com/';
+        }
+        tabLive.style.background = '#0284c7'; tabLive.style.color = '#fff';
+        tabDigest.style.background = ''; tabDigest.style.color = '';
+      });
+    }
+    const btnCloseCircuit = document.getElementById('btn-close-circuit');
+    if (btnCloseCircuit) btnCloseCircuit.addEventListener('click', closeCircuitReader);
+    if (circuitModal) {
+      circuitModal.addEventListener('click', (e) => {
+        if (e.target === circuitModal) closeCircuitReader();
+      });
+    }
+
     btnCamera.addEventListener('click', (e) => { e.stopPropagation(); cycleCameraMode(); });
-    btnSlice.addEventListener('click', (e) => { e.stopPropagation(); toggleSlice(); });
     btnTime.addEventListener('click', (e) => { e.stopPropagation(); toggleTimeOfDay(); });
+    if (btnCircuit) btnCircuit.addEventListener('click', (e) => { e.stopPropagation(); openCircuitReader(); });
+    if (btnMeeting) btnMeeting.addEventListener('click', (e) => { e.stopPropagation(); startTeamMeeting(); });
+    if (btnCheers) btnCheers.addEventListener('click', (e) => { e.stopPropagation(); triggerCheers(); });
     if (btnZoomIn) btnZoomIn.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom / 1.18); });
     if (btnZoomOut) btnZoomOut.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom * 1.18); });
     if (btnZoomReset) btnZoomReset.addEventListener('click', (e) => { e.stopPropagation(); setZoom(1.0); });
 
     renderer.domElement.addEventListener('wheel', (e) => {
-      if (drawerOpen) return;
+      if (drawerOpen || (circuitModal && circuitModal.classList.contains('open'))) return;
       e.preventDefault();
       const factor = e.deltaY > 0 ? 1.1 : 0.9;
       setZoom(targetZoom * factor);
@@ -1538,6 +1802,10 @@
         activeEl.blur();
         return;
       }
+      if (e.code === 'Escape' && circuitModal && circuitModal.classList.contains('open')) {
+        closeCircuitReader();
+        return;
+      }
       if (e.code === 'Escape' && isDialogOpen()) {
         closeDialog();
         return;
@@ -1547,10 +1815,12 @@
       keys[e.code] = true;
       if (e.code === 'KeyC') {
         cycleCameraMode();
-      } else if (e.code === 'KeyR') {
-        toggleSlice();
       } else if (e.code === 'KeyT') {
         toggleTimeOfDay();
+      } else if (e.code === 'KeyM') {
+        startTeamMeeting();
+      } else if (e.code === 'KeyH') {
+        triggerCheers();
       } else if (e.code === 'KeyU') {
         setDrawerOpen(!drawerOpen);
       } else if (e.code === 'KeyE') {
@@ -1795,9 +2065,10 @@
         }
       }
 
+      if (localCheerTimer > 0) localCheerTimer -= dt;
       localAvatar.group.position.copy(playerPos);
       localAvatar.group.rotation.y = yaw + Math.PI;
-      localAvatar.animate(horizSpeed, dt);
+      localAvatar.animate(horizSpeed, dt, localCheerTimer);
 
       // Camera Positioning + Smooth Zoom
       smoothZoom += (targetZoom - smoothZoom) * Math.min(1, dt * 10);

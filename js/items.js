@@ -1253,6 +1253,152 @@
     };
   }
 
+  // =========================================================================
+  // 3 Universal Interactive Tools Per Floor (Circuit Reader, Team Meeting, Cheers)
+  // =========================================================================
+
+  function createCircuitTerminal(lvl) {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.0, 0x00c7fd);
+    const desk = box(1.15, 0.72, 0.75, 0x0f172a);
+    desk.position.set(0, 0.36, 0);
+    const stand = box(0.24, 0.55, 0.2, 0x334155);
+    stand.position.set(0, 0.92, -0.05);
+    const monitor = box(1.05, 0.68, 0.12, 0x0068b5, 0x003a70);
+    monitor.position.set(0, 1.38, 0);
+    const screenGlow = box(0.9, 0.52, 0.04, 0x38bdf8, 0x0284c7);
+    screenGlow.position.set(0, 1.38, 0.06);
+    const ticker = box(0.75, 0.1, 0.05, 0xfde047, 0x854d0e);
+    ticker.position.set(0, 1.54, 0.08);
+    root.add(desk, stand, monitor, screenGlow, ticker);
+
+    const id = `circuit_terminal_f${lvl.level}`;
+    tagItem(root, id);
+    return {
+      id,
+      level: lvl.level,
+      isToolStation: true,
+      toolAction: 'open_circuit',
+      name: 'Circuit News Terminal',
+      actionLabel: 'Read circuit.intel.com',
+      group: root,
+      homePos: new THREE.Vector3(28.5, lvl.standY, 11.5),
+      radius: 1.25,
+      pulse: 0,
+      trigger(fx) {
+        this.pulse = 2.0;
+        fx.playTone(587.33, 0.1, 0.07, 'sine');
+        setTimeout(() => fx.playTone(880, 0.14, 0.07, 'sine'), 90);
+        return `📰 Opened circuit.intel.com Reader on Floor ${lvl.level}!`;
+      },
+      update(dt) {
+        this.pulse = Math.max(0, this.pulse - dt);
+        ticker.position.x = Math.sin(performance.now() * 0.003) * 0.08;
+        screenGlow.material.emissive.setHex(this.pulse > 0 ? 0x0ea5e9 : 0x0284c7);
+        ring.material.opacity = 0.42 + Math.sin(performance.now() * 0.004) * 0.18;
+      },
+    };
+  }
+
+  function createMeetingHub(lvl) {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.1, 0x4ade80);
+    const base = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.65, 0.72, 0.72, 16),
+      new THREE.MeshLambertMaterial({ color: 0x1e293b })
+    );
+    base.position.set(0, 0.36, 0);
+    const tableTop = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.88, 0.88, 0.1, 18),
+      new THREE.MeshLambertMaterial({ color: 0x0ea5e9, emissive: 0x0c4a6e })
+    );
+    tableTop.position.set(0, 0.76, 0);
+    const holo = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.24, 0),
+      new THREE.MeshLambertMaterial({ color: 0x4ade80, emissive: 0x15803d })
+    );
+    holo.position.set(0, 1.35, 0);
+    root.add(base, tableTop, holo);
+
+    const id = `meeting_hub_f${lvl.level}`;
+    tagItem(root, id);
+    return {
+      id,
+      level: lvl.level,
+      isToolStation: true,
+      toolAction: 'start_meeting',
+      name: 'Team Meeting Huddle Hub',
+      actionLabel: 'Gather All People',
+      group: root,
+      homePos: new THREE.Vector3(39.0, lvl.standY, 11.5),
+      radius: 1.3,
+      activeTimer: 0,
+      trigger(fx) {
+        this.activeTimer = 4.0;
+        fx.playTone(440, 0.12, 0.08, 'triangle');
+        setTimeout(() => fx.playTone(554.37, 0.14, 0.08, 'triangle'), 100);
+        setTimeout(() => fx.playTone(659.25, 0.2, 0.08, 'triangle'), 200);
+        return `👥 Team Meeting summoned on Floor ${lvl.level} — gathering everyone!`;
+      },
+      update(dt) {
+        const spd = this.activeTimer > 0 ? 5.5 : 1.4;
+        if (this.activeTimer > 0) this.activeTimer -= dt;
+        holo.rotation.y += dt * spd;
+        holo.position.y = 1.35 + Math.sin(performance.now() * 0.004) * 0.12;
+        ring.material.opacity = 0.45 + Math.sin(performance.now() * 0.005) * 0.2;
+      },
+    };
+  }
+
+  function createCheersCannon(lvl) {
+    const root = new THREE.Group();
+    const ring = addGlowRing(root, 1.05, 0xfde047);
+    const stand = box(0.95, 0.45, 0.95, 0x312e81);
+    stand.position.set(0, 0.22, 0);
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.24, 0.34, 0.95, 16),
+      new THREE.MeshLambertMaterial({ color: 0xf59e0b, emissive: 0x78350f })
+    );
+    barrel.position.set(0, 0.9, 0);
+    barrel.rotation.x = -0.18;
+    const star = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.22, 0),
+      new THREE.MeshLambertMaterial({ color: 0xf472b6, emissive: 0x9d174d })
+    );
+    star.position.set(0, 1.62, 0);
+    root.add(stand, barrel, star);
+
+    const id = `cheers_cannon_f${lvl.level}`;
+    tagItem(root, id);
+    return {
+      id,
+      level: lvl.level,
+      isToolStation: true,
+      toolAction: 'trigger_cheers',
+      name: 'Celebrate & Cheers Station',
+      actionLabel: 'Celebrate & Cheers!',
+      group: root,
+      homePos: new THREE.Vector3(38.5, lvl.standY, 27.0),
+      radius: 1.3,
+      boomTimer: 0,
+      trigger(fx) {
+        this.boomTimer = 3.5;
+        fx.playTone(523.25, 0.12, 0.09, 'triangle');
+        setTimeout(() => fx.playTone(659.25, 0.12, 0.09, 'triangle'), 90);
+        setTimeout(() => fx.playTone(783.99, 0.14, 0.09, 'triangle'), 180);
+        setTimeout(() => fx.playTone(1046.5, 0.25, 0.1, 'triangle'), 270);
+        return `🥂 CHEERS! Confetti & celebration triggered on Floor ${lvl.level}!`;
+      },
+      update(dt) {
+        const spin = this.boomTimer > 0 ? 8.5 : 1.6;
+        if (this.boomTimer > 0) this.boomTimer -= dt;
+        star.rotation.y += dt * spin;
+        star.position.y = 1.62 + Math.sin(performance.now() * 0.006) * 0.16;
+        ring.material.opacity = 0.45 + Math.sin(performance.now() * 0.005) * 0.2;
+      },
+    };
+  }
+
   // HD Intel Logo Plaque + Floor Medallion for Every Floor (F1-F6)
   function createIntelFloorTextures(lvl) {
     // 1. Wall Architectural Sign (1024x320)
@@ -1359,8 +1505,9 @@
         this.scene.add(item.group);
       }
 
-      // Mount Intel Logo Wall Plaque + Floor Medallion on EVERY floor (1-6)
+      // Mount Intel Logo Wall Plaque + Floor Medallion + 3 Universal Interactive Tools on EVERY floor (1-6)
       this.intelLogos = [];
+      this.toolStations = [];
       for (const lvl of levels) {
         const { wallTex, floorTex } = createIntelFloorTextures(lvl);
 
@@ -1382,25 +1529,45 @@
         this.scene.add(floorMedallion);
 
         this.intelLogos.push({ standY: lvl.standY, wallSign, floorMedallion });
+
+        // Spawn 3 Interactive Tools on EVERY floor (Circuit Reader, Team Meeting Hub, Cheers Cannon)
+        const stations = [
+          createCircuitTerminal(lvl),
+          createMeetingHub(lvl),
+          createCheersCannon(lvl),
+        ];
+        for (const st of stations) {
+          st.group.position.copy(st.homePos);
+          this.scene.add(st.group);
+          this.toolStations.push(st);
+        }
       }
     }
 
+    getAllInteractive() {
+      return [...this.items, ...this.toolStations];
+    }
+
     getMeshes() {
-      return this.items.map((it) => it.group);
+      return this.getAllInteractive().map((it) => it.group);
     }
 
     findById(id) {
-      return this.items.find((it) => it.id === id) || null;
+      return this.getAllInteractive().find((it) => it.id === id) || null;
     }
 
     getByLevel(level) {
       return this.items.filter((it) => it.level === level);
     }
 
+    getToolsByLevel(level) {
+      return this.toolStations.filter((st) => st.level === level);
+    }
+
     getNearestItem(pos, maxDist = 3.8) {
       let best = null;
       let bestDist = maxDist;
-      for (const it of this.items) {
+      for (const it of this.getAllInteractive()) {
         if (Math.abs(it.group.position.y - pos.y) > 2.8) continue;
         const d = Math.hypot(it.group.position.x - pos.x, it.group.position.z - pos.z);
         if (d < bestDist) {
@@ -1412,7 +1579,7 @@
     }
 
     update(dt, playerPos, fx, sliceMaxY, onMsg) {
-      for (const it of this.items) {
+      for (const it of this.getAllInteractive()) {
         if (sliceMaxY !== null && it.homePos.y > sliceMaxY + 0.5) {
           it.group.visible = false;
           continue;

@@ -304,7 +304,17 @@
       nametag,
       promptSprite,
       walkPhase: (seed * 0.7) % (Math.PI * 2),
-      animate(speed, dt) {
+      cheerPhase: 0,
+      animate(speed, dt, cheerTimer = 0) {
+        if (cheerTimer > 0) {
+          this.cheerPhase += dt * 11;
+          this.leftArm.rotation.x = -2.45 + Math.sin(this.cheerPhase) * 0.35;
+          this.rightArm.rotation.x = -2.45 - Math.sin(this.cheerPhase) * 0.35;
+          this.leftLeg.rotation.x = Math.sin(this.cheerPhase) * 0.25;
+          this.rightLeg.rotation.x = -Math.sin(this.cheerPhase) * 0.25;
+          this.bodyRig.position.y = Math.abs(Math.sin(this.cheerPhase * 0.9)) * 0.28;
+          return;
+        }
         if (speed > 0.15) {
           this.walkPhase += dt * speed * 2.6;
           const swing = Math.sin(this.walkPhase) * 0.65;
@@ -822,11 +832,76 @@
       if (npc.path.length === 0) npc.waitTimer = 0.6;
     }
 
+    cheerAllOnFloor(standY, duration = 3.8) {
+      for (const npc of this.npcs) {
+        if (Math.abs(npc.pos.y - standY) < 2.5) {
+          npc.cheerTimer = duration;
+        }
+      }
+      for (const r of this.remotePlayers.values()) {
+        if (Math.abs(r.pos.y - standY) < 2.5) {
+          r.cheerTimer = duration;
+        }
+      }
+    }
+
+    gatherForMeeting(centerPos, floorObj, durationSec = 25) {
+      if (!floorObj) return 0;
+      const targetNav = this.navByLevel.get(floorObj.level);
+      if (!targetNav) return 0;
+      let gathered = 0;
+      const total = this.npcs.length || 1;
+      const radius = 2.6;
+
+      this.npcs.forEach((npc, idx) => {
+        if (!npc.origFloorObj) npc.origFloorObj = npc.floorObj;
+        const onOtherFloor = npc.floorObj.level !== floorObj.level;
+        npc.floorObj = floorObj;
+        npc.nav = targetNav;
+        npc.meetingTimer = durationSec;
+        npc.meetingHost = { x: centerPos.x, z: centerPos.z };
+
+        const angle = (idx / total) * Math.PI * 2;
+        const slotX = Math.max(6, Math.min(61, centerPos.x + Math.cos(angle) * radius));
+        const slotZ = Math.max(9, Math.min(32, centerPos.z + Math.sin(angle) * radius));
+        npc.meetingSlot = { x: slotX, z: slotZ };
+
+        if (onOtherFloor) {
+          // Off-floor colleagues arrive cleanly through this floor's Lift Lobby!
+          const startX = 30.5 + (idx % 7) * 1.1;
+          const startZ = 9.5 + (idx % 2) * 1.1;
+          npc.pos.set(startX, floorObj.standY, startZ);
+          npc.vel.set(0, 0, 0);
+        }
+        npc.path = targetNav.findPath(npc.pos.x, npc.pos.z, slotX, slotZ);
+        npc.waitTimer = 0;
+        gathered++;
+      });
+      return gathered;
+    }
+
+    endMeeting() {
+      for (const npc of this.npcs) {
+        npc.meetingTimer = 0;
+        npc.meetingSlot = null;
+        if (npc.origFloorObj && npc.origFloorObj.level !== npc.floorObj.level) {
+          npc.floorObj = npc.origFloorObj;
+          npc.nav = this.navByLevel.get(npc.floorObj.level);
+          const cells = npc.nav ? npc.nav.cells : [];
+          const spot = cells.length > 0 ? cells[Math.floor(Math.random() * cells.length)] : { x: 34.5, z: 12.5 };
+          npc.pos.set(spot.x, npc.floorObj.standY, spot.z);
+          npc.path = [];
+        }
+        npc.origFloorObj = null;
+      }
+    }
+
     update(dt, cameraPos, playerPos, sliceMaxY = null) {
       const liveNames = new Set();
       // Update live remote players smoothly
       for (const r of this.remotePlayers.values()) {
         liveNames.add(r.name.toLowerCase());
+        if (r.cheerTimer > 0) r.cheerTimer -= dt;
         if (sliceMaxY !== null && r.pos.y > sliceMaxY) {
           r.avatar.group.visible = false;
           continue;
@@ -836,7 +911,7 @@
         r.pos.lerp(r.targetPos, Math.min(1, dt * 10));
         r.avatar.group.position.copy(r.pos);
         r.avatar.group.rotation.y = r.yaw;
-        r.avatar.animate(dist > 0.05 ? 4.0 : 0, dt);
+        r.avatar.animate(dist > 0.05 ? 4.0 : 0, dt, r.cheerTimer || 0);
         if (r.avatar.promptSprite && playerPos) {
           const pd = Math.hypot(r.pos.x - playerPos.x, r.pos.z - playerPos.z);
           r.avatar.promptSprite.visible = pd < 3.2 && Math.abs(r.pos.y - playerPos.y) < 2.2;
@@ -846,6 +921,7 @@
       for (let i = 0; i < this.npcs.length; i++) {
         const npc = this.npcs[i];
         let moveSpeed = 0;
+        if (npc.cheerTimer > 0) npc.cheerTimer -= dt;
 
         if (liveNames.has(npc.name.toLowerCase()) || (sliceMaxY !== null && npc.pos.y > sliceMaxY)) {
           npc.avatar.group.visible = false;
@@ -861,10 +937,61 @@
           npc.avatar.promptSprite.visible = distToPlayer < 3.2;
         }
 
+        if (npc.meetingTimer > 0) {
+          npc.meetingTimer -= dt;
+          if (npc.meetingTimer <= 0) {
+            if (npc.origFloorObj && npc.origFloorObj.level !== npc.floorObj.level) {
+              npc.floorObj = npc.origFloorObj;
+              npc.nav = this.navByLevel.get(npc.floorObj.level);
+              const cells = npc.nav ? npc.nav.cells : [];
+              const spot = cells.length > 0 ? cells[Math.floor(Math.random() * cells.length)] : { x: 34.5, z: 12.5 };
+              npc.pos.set(spot.x, npc.floorObj.standY, spot.z);
+              npc.path = [];
+            }
+            npc.origFloorObj = null;
+            npc.meetingSlot = null;
+          }
+        }
+
         if (npc.talkPauseTimer > 0) {
           npc.talkPauseTimer -= dt;
           npc.vel.x = 0;
           npc.vel.z = 0;
+        } else if (npc.meetingTimer > 0 && npc.meetingSlot) {
+          if (npc.path.length > 0) {
+            const wp = npc.path[0];
+            const dx = wp.x - npc.pos.x;
+            const dz = wp.z - npc.pos.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist < 0.4) {
+              npc.path.shift();
+            } else {
+              const nx = dx / dist;
+              const nz = dz / dist;
+              npc.vel.x = nx * 4.5;
+              npc.vel.z = nz * 4.5;
+              moveSpeed = 4.5;
+              npc.yaw = Math.atan2(nx, nz);
+            }
+          } else {
+            const dx = npc.meetingSlot.x - npc.pos.x;
+            const dz = npc.meetingSlot.z - npc.pos.z;
+            const dist = Math.hypot(dx, dz);
+            if (dist > 0.65) {
+              const nx = dx / dist;
+              const nz = dz / dist;
+              npc.vel.x = nx * 3.8;
+              npc.vel.z = nz * 3.8;
+              moveSpeed = 3.8;
+              npc.yaw = Math.atan2(nx, nz);
+            } else {
+              npc.vel.x = 0;
+              npc.vel.z = 0;
+              if (npc.meetingHost) {
+                npc.yaw = Math.atan2(npc.meetingHost.x - npc.pos.x, npc.meetingHost.z - npc.pos.z);
+              }
+            }
+          }
         } else if (npc.following && playerPos && Math.abs(playerPos.y - npc.floorObj.standY) < 2.0) {
           // Partner Follow behavior (Pokémon style!)
           const dx = playerPos.x - npc.pos.x;
@@ -933,7 +1060,7 @@
 
         npc.avatar.group.position.copy(npc.pos);
         npc.avatar.group.rotation.y = npc.yaw;
-        npc.avatar.animate(moveSpeed, dt);
+        npc.avatar.animate(moveSpeed, dt, npc.cheerTimer || 0);
 
         if (npc.avatar.nametag && cameraPos) {
           const d = npc.pos.distanceToSquared(cameraPos);
