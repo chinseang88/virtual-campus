@@ -103,8 +103,8 @@
         } catch (e) { /* bridge unreachable or lacks /auth/me CORS */ }
       }
 
-      // 3. Static GitHub Pages without SPA-registered Client ID cannot use 18f74cfa-... (Microsoft throws AADSTS50011)
-      if (!this.customClientId) {
+      // 3. Static GitHub Pages without a separate SPA-registered Client ID cannot use 18f74cfa-... (Microsoft throws AADSTS50011)
+      if (!this.customClientId || this.customClientId === ENTRA_CONFIG.clientId) {
         this.mode = 'blocked-origin';
         this.canLaunchEntra = false;
         return null;
