@@ -1254,41 +1254,8 @@
 
     const btnSsoLogin = document.getElementById('btn-sso-login');
     const btnSsoLogout = document.getElementById('btn-sso-logout');
-    const btnSsoConfig = document.getElementById('btn-sso-config');
-    const ssoConfigPanel = document.getElementById('sso-config-panel');
-    const ssoBridgeInput = document.getElementById('sso-bridge-input');
-    const ssoClientIdInput = document.getElementById('sso-clientid-input');
-    const btnSsoSaveCfg = document.getElementById('btn-sso-save-cfg');
-
-    if (btnSsoConfig && ssoConfigPanel) {
-      btnSsoConfig.addEventListener('click', () => {
-        const open = ssoConfigPanel.style.display === 'flex';
-        ssoConfigPanel.style.display = open ? 'none' : 'flex';
-        if (!open && ssoManager) {
-          if (ssoBridgeInput) ssoBridgeInput.value = ssoManager.bridgeUrl || '';
-          if (ssoClientIdInput) ssoClientIdInput.value = ssoManager.customClientId || '';
-        }
-      });
-    }
-    if (btnSsoSaveCfg && ssoManager) {
-      btnSsoSaveCfg.addEventListener('click', async () => {
-        ssoManager.setConfig({
-          bridgeUrl: ssoBridgeInput ? ssoBridgeInput.value : '',
-          clientId: ssoClientIdInput ? ssoClientIdInput.value : '',
-        });
-        await ssoManager.init();
-        renderUserHud();
-        showToast(`⚙️ SSO Re-Checked: ${ssoManager.getModeLabel()}`, false);
-      });
-    }
-
     if (btnSsoLogin && ssoManager) {
       btnSsoLogin.addEventListener('click', async () => {
-        if (!ssoManager.canLaunchEntra) {
-          if (ssoConfigPanel) ssoConfigPanel.style.display = 'flex';
-          showToast('ℹ️ Use name / @intel.com sign-in above, or click ⚙️ to enter a github.io SPA Client ID or ecebuildplus server.', true);
-          return;
-        }
         try {
           btnSsoLogin.disabled = true;
           btnSsoLogin.textContent = 'Signing in via Intel SSO...';
@@ -1305,7 +1272,7 @@
           showToast(`🔒 SSO: ${msg}`, true);
         } finally {
           btnSsoLogin.disabled = false;
-          btnSsoLogin.textContent = '🔐 Entra ID SSO';
+          btnSsoLogin.textContent = '🔐 Sign in with Intel SSO';
           renderUserHud();
         }
       });
@@ -1318,17 +1285,6 @@
         showToast('🔐 Signed out of Intel SSO.', false);
       });
     }
-
-    document.getElementById('login-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      const val = document.getElementById('login-name-input').value.trim();
-      if (!val) return;
-      const u = roster.login(val);
-      document.getElementById('login-name-input').value = '';
-      applyActiveUserState(true);
-      const maxFl = world.getMaxAllowedFloorObj(u.level);
-      showToast(`🔑 Logged in as ${u.name} (Floor ${u.level} — ${maxFl.shortName})`, false);
-    });
 
     document.getElementById('add-user-form').addEventListener('submit', (e) => {
       e.preventDefault();

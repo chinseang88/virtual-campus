@@ -103,14 +103,7 @@
         } catch (e) { /* bridge unreachable or lacks /auth/me CORS */ }
       }
 
-      // 3. Static GitHub Pages without a separate SPA-registered Client ID cannot use 18f74cfa-... (Microsoft throws AADSTS50011)
-      if (!this.customClientId || this.customClientId === ENTRA_CONFIG.clientId) {
-        this.mode = 'blocked-origin';
-        this.canLaunchEntra = false;
-        return null;
-      }
-
-      // 4. Custom SPA Client ID provided -> use MSAL Browser PKCE
+      // 3. MSAL Browser PKCE (for GitHub Pages / SharePoint SPA)
       if (typeof global.msal !== 'undefined' && global.msal.PublicClientApplication) {
         try {
           const redirectUri = `${window.location.origin}${window.location.pathname}`;
@@ -242,9 +235,6 @@
 
     async signIn() {
       this.lastError = '';
-      if (this.mode === 'blocked-origin' && !this.customClientId) {
-        throw new Error('Entra ID App 18f74cfa-... rejects github.io (AADSTS50011). Click ⚙️ to set an SPA Client ID, host server.py on ecebuildplus.app.intel.com, or sign in with your @intel.com email above.');
-      }
       if (this.mode === 'server') {
         const nextUrl = encodeURIComponent(window.location.pathname + window.location.search);
         window.location.assign(`/auth/login?next=${nextUrl}`);
