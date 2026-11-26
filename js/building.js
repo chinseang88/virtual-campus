@@ -288,31 +288,44 @@
       // Clear interior volume
       this.fill(5, y0 + 1, 7, 62, yTop, 33, BLOCKS.AIR);
 
-      // Perimeter curtain walls: crystal-clear open-office glass with corner & rear structural mullions
+      // Perimeter walls: full-height glass backdrop on North (z=6); crisp cutaway half-walls (curb + glass) on S/E/W
       for (let x = 4; x <= 63; x++) {
         const isCorner = x === 4 || x === 63;
         const isNorthMullion = x === 26 || x === 41;
         for (let y = y0 + 1; y <= yTop; y++) {
           this.set(x, y, 6, (isCorner || isNorthMullion) ? BLOCKS.CONCRETE : BLOCKS.GLASS);
-          this.set(x, y, 34, isCorner ? BLOCKS.CONCRETE : BLOCKS.GLASS);
+        }
+        if (isCorner) {
+          for (let y = y0 + 1; y <= yTop; y++) this.set(x, y, 34, BLOCKS.CONCRETE);
+        } else {
+          this.set(x, y0 + 1, 34, BLOCKS.CONCRETE);
+          this.set(x, y0 + 2, 34, BLOCKS.GLASS);
         }
       }
       for (let z = 6; z <= 34; z++) {
         const isCorner = z === 6 || z === 34;
-        for (let y = y0 + 1; y <= yTop; y++) {
-          const blk = isCorner ? BLOCKS.CONCRETE : BLOCKS.GLASS;
-          this.set(4, y, z, blk);
-          this.set(63, y, z, blk);
+        if (isCorner) {
+          for (let y = y0 + 1; y <= yTop; y++) {
+            this.set(4, y, z, BLOCKS.CONCRETE);
+            this.set(63, y, z, BLOCKS.CONCRETE);
+          }
+        } else {
+          this.set(4, y0 + 1, z, BLOCKS.CONCRETE);
+          this.set(4, y0 + 2, z, BLOCKS.GLASS);
+          this.set(63, y0 + 1, z, BLOCKS.CONCRETE);
+          this.set(63, y0 + 2, z, BLOCKS.GLASS);
         }
       }
 
-      // Open-office low glass partitions separating L1 | LL | L2 (waist-high glass rail, wide open sightlines!)
+      // Open-office wing dividers separating L1 | LL | L2 (solid curb + framed glass above, wide open doorways!)
       for (let z = 7; z <= 33; z++) {
         const inNorthDoor = z >= 10 && z <= 15;
         const inSouthDoor = z >= 26 && z <= 31;
         if (!inNorthDoor && !inSouthDoor) {
-          this.set(26, y0 + 1, z, BLOCKS.GLASS);
-          this.set(41, y0 + 1, z, BLOCKS.GLASS);
+          this.set(26, y0 + 1, z, BLOCKS.CONCRETE);
+          this.set(26, y0 + 2, z, BLOCKS.GLASS);
+          this.set(41, y0 + 1, z, BLOCKS.CONCRETE);
+          this.set(41, y0 + 2, z, BLOCKS.GLASS);
         }
       }
 

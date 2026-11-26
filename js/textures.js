@@ -110,25 +110,25 @@
       return null;
     });
 
-    // 4: Curtain Glass Window (balanced see-through tint + crisp visible mullions)
+    // 4: Curtain Glass Window (100% crisp solid frame + clean half-transparent tinted pane)
     drawCustomTile(ctx, 4, 0, (c, s) => {
       c.clearRect(0, 0, s, s);
-      c.fillStyle = 'rgba(125, 211, 252, 0.42)';
+      // Clean half-transparent tinted sky glass center
+      c.fillStyle = 'rgba(56, 189, 248, 0.48)';
       c.fillRect(0, 0, s, s);
-      // Outer architectural frame so every wall boundary & doorway is unmistakable
-      c.strokeStyle = 'rgba(30, 41, 59, 0.88)';
-      c.lineWidth = 4;
-      c.strokeRect(2, 2, s - 4, s - 4);
-      // Inner light top/bottom trim highlight
-      c.strokeStyle = 'rgba(224, 242, 254, 0.72)';
-      c.lineWidth = 1.5;
-      c.strokeRect(5, 5, s - 10, s - 10);
-      // Diagonal glass glare
-      c.fillStyle = 'rgba(240, 249, 255, 0.45)';
+      // Diagonal soft glass shine
+      c.fillStyle = 'rgba(240, 249, 255, 0.38)';
       c.beginPath();
-      c.moveTo(9, 24); c.lineTo(24, 9); c.lineTo(31, 9); c.lineTo(9, 31);
+      c.moveTo(8, 26); c.lineTo(26, 8); c.lineTo(34, 8); c.lineTo(8, 34);
       c.closePath();
       c.fill();
+      // 100% solid architectural frame + cross mullion so walls vs doorways are always sharp
+      c.strokeStyle = '#334155';
+      c.lineWidth = 6;
+      c.strokeRect(3, 3, s - 6, s - 6);
+      c.fillStyle = '#cbd5e1';
+      c.fillRect(4, 4, s - 8, 3);
+      c.fillRect(4, s - 7, s - 8, 3);
     });
 
     // 5: Lobby Diamond-Tiled Marble (sleek RPG Center floor!)
