@@ -516,12 +516,6 @@
         openCircuitReader();
         return;
       }
-      if (item.toolAction === 'start_meeting') {
-        item.trigger(sfx, playerPos);
-        spawnParticles(item.group.position.x, item.group.position.y + 0.8, item.group.position.z, '#4ade80', 16);
-        startTeamMeeting({ x: item.group.position.x, y: item.group.position.y, z: item.group.position.z });
-        return;
-      }
       if (item.toolAction === 'trigger_cheers') {
         item.trigger(sfx, playerPos);
         triggerCheers();
@@ -1380,14 +1374,13 @@
       });
     }
 
-    // Camera Mode, Zoom & Universal Floor Tools (Circuit Reader, Team Meeting, Cheers)
+    // Camera Mode, Zoom & Universal Floor Tools (Circuit Reader, Cheers)
     const btnCamera = document.getElementById('btn-camera');
     const btnTime = document.getElementById('btn-time');
     const btnZoomOut = document.getElementById('btn-zoom-out');
     const btnZoomReset = document.getElementById('btn-zoom-reset');
     const btnZoomIn = document.getElementById('btn-zoom-in');
     const btnCircuit = document.getElementById('btn-circuit');
-    const btnMeeting = document.getElementById('btn-meeting');
     const btnCheers = document.getElementById('btn-cheers');
 
     let targetZoom = 1.0;
@@ -1410,10 +1403,10 @@
       }
 
       if (cameraMode === 0) {
-        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> Scroll/+/- zoom. Click floor to walk, [M] Meet, [H] Cheers, [E] Interact!';
+        comfortTipEl.innerHTML = '<strong>Campus 3/4:</strong> Scroll/+/- zoom. Click floor to walk, [H] Cheers, [E] Interact!';
         crosshairEl.style.display = 'none';
       } else if (cameraMode === 1) {
-        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Scroll/+/- zoom out/in. Click floor to walk, [M] Meet, [H] Cheers!';
+        comfortTipEl.innerHTML = '<strong>Top-Down Map:</strong> Scroll/+/- zoom out/in. Click floor to walk, [H] Cheers!';
         crosshairEl.style.display = 'none';
       } else {
         comfortTipEl.innerHTML = '<strong>1st Person:</strong> Drag or A/D to look 360°, Scroll/+/- to zoom. [C] to walk again.';
@@ -1505,61 +1498,11 @@
       });
     }
 
-    const meetingBanner = document.getElementById('meeting-banner');
-    const meetingStatusText = document.getElementById('meeting-status-text');
-    const btnMeetingNote = document.getElementById('btn-meeting-note');
-    const btnMeetingCheers = document.getElementById('btn-meeting-cheers');
-    const btnMeetingEnd = document.getElementById('btn-meeting-end');
-    let meetingTimeout = null;
-
-    // Team Meeting stays strictly inside the local 3D map (gathers virtual map avatars only, never calls real users)
-    function startTeamMeeting(customCenter = null) {
-      const center = customCenter || { x: playerPos.x, y: playerPos.y, z: playerPos.z };
-      const fl = world.getFloorAtY(center.y);
-      const count = crowd.gatherForMeeting(center, fl, 30);
-      if (meetingStatusText) {
-        meetingStatusText.textContent = `👥 Map Huddle on Floor ${fl.level} (${count} map bots gathered)`;
-      }
-      if (meetingBanner) meetingBanner.classList.add('open');
-      if (meetingTimeout) clearTimeout(meetingTimeout);
-      meetingTimeout = setTimeout(() => {
-        if (meetingBanner) meetingBanner.classList.remove('open');
-      }, 30000);
-
-      sfx.elevator();
-      spawnParticles(center.x, center.y + 0.5, center.z, '#4ade80', 18);
-      const msg = `👥 Map Team Huddle on Floor ${fl.level} (${fl.shortName}) — gathered ${count} map characters inside the campus!`;
-      showToast(msg, false);
-      pushChat('', msg, true);
-    }
-
-    function endTeamMeeting() {
-      crowd.endMeeting();
-      if (meetingTimeout) { clearTimeout(meetingTimeout); meetingTimeout = null; }
-      if (meetingBanner) meetingBanner.classList.remove('open');
-      showToast('👥 Map Huddle ended — characters returned to patrolling.', false);
-    }
-
     function handleRemoteCampusEvent(evt) {
       if (evt.type === 'cheers') {
         triggerCheers(evt);
       }
     }
-
-    if (btnMeetingNote) {
-      btnMeetingNote.addEventListener('click', () => {
-        const note = prompt('Add local Map Huddle note to Campus Wall:');
-        if (note && note.trim()) {
-          const me = roster.getActiveUser();
-          const fl = world.getFloorAtY(playerPos.y).level;
-          const full = `📋 [Map Huddle Note] ${note.trim()}`;
-          pushChat(`${me.name} @F${fl}`, full);
-          showToast('📋 Note posted locally on your Campus Wall!', false);
-        }
-      });
-    }
-    if (btnMeetingCheers) btnMeetingCheers.addEventListener('click', () => triggerCheers());
-    if (btnMeetingEnd) btnMeetingEnd.addEventListener('click', () => endTeamMeeting());
 
     // circuit.intel.com Reader Modal
     const CIRCUIT_ARTICLES = [
@@ -1660,7 +1603,6 @@
     btnCamera.addEventListener('click', (e) => { e.stopPropagation(); cycleCameraMode(); });
     btnTime.addEventListener('click', (e) => { e.stopPropagation(); toggleTimeOfDay(); });
     if (btnCircuit) btnCircuit.addEventListener('click', (e) => { e.stopPropagation(); openCircuitReader(); });
-    if (btnMeeting) btnMeeting.addEventListener('click', (e) => { e.stopPropagation(); startTeamMeeting(); });
     if (btnCheers) btnCheers.addEventListener('click', (e) => { e.stopPropagation(); triggerCheers(); });
     if (btnZoomIn) btnZoomIn.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom / 1.18); });
     if (btnZoomOut) btnZoomOut.addEventListener('click', (e) => { e.stopPropagation(); setZoom(targetZoom * 1.18); });
@@ -1778,8 +1720,6 @@
         cycleCameraMode();
       } else if (e.code === 'KeyT') {
         toggleTimeOfDay();
-      } else if (e.code === 'KeyM') {
-        startTeamMeeting();
       } else if (e.code === 'KeyH') {
         triggerCheers();
       } else if (e.code === 'KeyU') {

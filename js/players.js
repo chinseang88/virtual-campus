@@ -845,59 +845,6 @@
       }
     }
 
-    gatherForMeeting(centerPos, floorObj, durationSec = 25) {
-      if (!floorObj) return 0;
-      const targetNav = this.navByLevel.get(floorObj.level);
-      if (!targetNav) return 0;
-      let gathered = 0;
-      const total = this.npcs.length || 1;
-      const radius = 2.6;
-
-      this.npcs.forEach((npc, idx) => {
-        if (!npc.origFloorObj) npc.origFloorObj = npc.floorObj;
-        const onOtherFloor = npc.floorObj.level !== floorObj.level;
-        npc.floorObj = floorObj;
-        npc.nav = targetNav;
-        npc.meetingTimer = durationSec;
-        npc.meetingHost = { x: centerPos.x, z: centerPos.z };
-
-        const angle = (idx / total) * Math.PI * 2;
-        const rawX = Math.max(6, Math.min(61, centerPos.x + Math.cos(angle) * radius));
-        const rawZ = Math.max(9, Math.min(32, centerPos.z + Math.sin(angle) * radius));
-        const nearGoal = targetNav.findNearestWalkable(Math.floor(rawX), Math.floor(rawZ), 5) || { x: centerPos.x, z: centerPos.z };
-        const slotX = nearGoal.x;
-        const slotZ = nearGoal.z;
-        npc.meetingSlot = { x: slotX, z: slotZ };
-
-        if (onOtherFloor) {
-          // Off-floor map avatars step out from this floor's Lift Lobby cleanly!
-          const startSpot = targetNav.findNearestWalkable(30 + (idx % 8), 11 + (idx % 2), 4) || { x: 34.5, z: 12.5 };
-          npc.pos.set(startSpot.x, floorObj.standY, startSpot.z);
-          npc.vel.set(0, 0, 0);
-        }
-        npc.path = targetNav.findPlayerPath(npc.pos.x, npc.pos.z, slotX, slotZ);
-        npc.waitTimer = 0;
-        gathered++;
-      });
-      return gathered;
-    }
-
-    endMeeting() {
-      for (const npc of this.npcs) {
-        npc.meetingTimer = 0;
-        npc.meetingSlot = null;
-        if (npc.origFloorObj && npc.origFloorObj.level !== npc.floorObj.level) {
-          npc.floorObj = npc.origFloorObj;
-          npc.nav = this.navByLevel.get(npc.floorObj.level);
-          const cells = npc.nav ? npc.nav.cells : [];
-          const spot = cells.length > 0 ? cells[Math.floor(Math.random() * cells.length)] : { x: 34.5, z: 12.5 };
-          npc.pos.set(spot.x, npc.floorObj.standY, spot.z);
-          npc.path = [];
-        }
-        npc.origFloorObj = null;
-      }
-    }
-
     update(dt, cameraPos, playerPos, sliceMaxY = null) {
       const liveNames = new Set();
       // Update live remote players smoothly
@@ -939,61 +886,10 @@
           npc.avatar.promptSprite.visible = distToPlayer < 3.2;
         }
 
-        if (npc.meetingTimer > 0) {
-          npc.meetingTimer -= dt;
-          if (npc.meetingTimer <= 0) {
-            if (npc.origFloorObj && npc.origFloorObj.level !== npc.floorObj.level) {
-              npc.floorObj = npc.origFloorObj;
-              npc.nav = this.navByLevel.get(npc.floorObj.level);
-              const cells = npc.nav ? npc.nav.cells : [];
-              const spot = cells.length > 0 ? cells[Math.floor(Math.random() * cells.length)] : { x: 34.5, z: 12.5 };
-              npc.pos.set(spot.x, npc.floorObj.standY, spot.z);
-              npc.path = [];
-            }
-            npc.origFloorObj = null;
-            npc.meetingSlot = null;
-          }
-        }
-
         if (npc.talkPauseTimer > 0) {
           npc.talkPauseTimer -= dt;
           npc.vel.x = 0;
           npc.vel.z = 0;
-        } else if (npc.meetingTimer > 0 && npc.meetingSlot) {
-          if (npc.path.length > 0) {
-            const wp = npc.path[0];
-            const dx = wp.x - npc.pos.x;
-            const dz = wp.z - npc.pos.z;
-            const dist = Math.hypot(dx, dz);
-            if (dist < 0.4) {
-              npc.path.shift();
-            } else {
-              const nx = dx / dist;
-              const nz = dz / dist;
-              npc.vel.x = nx * 4.5;
-              npc.vel.z = nz * 4.5;
-              moveSpeed = 4.5;
-              npc.yaw = Math.atan2(nx, nz);
-            }
-          } else {
-            const dx = npc.meetingSlot.x - npc.pos.x;
-            const dz = npc.meetingSlot.z - npc.pos.z;
-            const dist = Math.hypot(dx, dz);
-            if (dist > 0.65) {
-              const nx = dx / dist;
-              const nz = dz / dist;
-              npc.vel.x = nx * 3.8;
-              npc.vel.z = nz * 3.8;
-              moveSpeed = 3.8;
-              npc.yaw = Math.atan2(nx, nz);
-            } else {
-              npc.vel.x = 0;
-              npc.vel.z = 0;
-              if (npc.meetingHost) {
-                npc.yaw = Math.atan2(npc.meetingHost.x - npc.pos.x, npc.meetingHost.z - npc.pos.z);
-              }
-            }
-          }
         } else if (npc.following && playerPos && Math.abs(playerPos.y - npc.floorObj.standY) < 2.0) {
           // Partner Follow behavior (Pokémon style!)
           const dx = playerPos.x - npc.pos.x;

@@ -1254,7 +1254,7 @@
   }
 
   // =========================================================================
-  // 3 Universal Interactive Tools Per Floor (Circuit Reader, Team Meeting, Cheers)
+  // Universal Interactive Tools Per Floor (Circuit Reader & Cheers)
   // =========================================================================
 
   function createCircuitTerminal(lvl) {
@@ -1296,56 +1296,6 @@
         ticker.position.x = Math.sin(performance.now() * 0.003) * 0.08;
         screenGlow.material.emissive.setHex(this.pulse > 0 ? 0x0ea5e9 : 0x0284c7);
         ring.material.opacity = 0.42 + Math.sin(performance.now() * 0.004) * 0.18;
-      },
-    };
-  }
-
-  function createMeetingHub(lvl) {
-    const root = new THREE.Group();
-    const ring = addGlowRing(root, 1.1, 0x4ade80);
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.65, 0.72, 0.72, 16),
-      new THREE.MeshLambertMaterial({ color: 0x1e293b })
-    );
-    base.position.set(0, 0.36, 0);
-    const tableTop = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.88, 0.88, 0.1, 18),
-      new THREE.MeshLambertMaterial({ color: 0x0ea5e9, emissive: 0x0c4a6e })
-    );
-    tableTop.position.set(0, 0.76, 0);
-    const holo = new THREE.Mesh(
-      new THREE.OctahedronGeometry(0.24, 0),
-      new THREE.MeshLambertMaterial({ color: 0x4ade80, emissive: 0x15803d })
-    );
-    holo.position.set(0, 1.35, 0);
-    root.add(base, tableTop, holo);
-
-    const id = `meeting_hub_f${lvl.level}`;
-    tagItem(root, id);
-    return {
-      id,
-      level: lvl.level,
-      isToolStation: true,
-      toolAction: 'start_meeting',
-      name: 'Team Meeting Huddle Hub',
-      actionLabel: 'Gather All People',
-      group: root,
-      homePos: new THREE.Vector3(39.0, lvl.standY, 11.5),
-      radius: 1.3,
-      activeTimer: 0,
-      trigger(fx) {
-        this.activeTimer = 4.0;
-        fx.playTone(440, 0.12, 0.08, 'triangle');
-        setTimeout(() => fx.playTone(554.37, 0.14, 0.08, 'triangle'), 100);
-        setTimeout(() => fx.playTone(659.25, 0.2, 0.08, 'triangle'), 200);
-        return `👥 Team Meeting summoned on Floor ${lvl.level} — gathering everyone!`;
-      },
-      update(dt) {
-        const spd = this.activeTimer > 0 ? 5.5 : 1.4;
-        if (this.activeTimer > 0) this.activeTimer -= dt;
-        holo.rotation.y += dt * spd;
-        holo.position.y = 1.35 + Math.sin(performance.now() * 0.004) * 0.12;
-        ring.material.opacity = 0.45 + Math.sin(performance.now() * 0.005) * 0.2;
       },
     };
   }
@@ -1530,10 +1480,9 @@
 
         this.intelLogos.push({ standY: lvl.standY, wallSign, floorMedallion });
 
-        // Spawn 3 Interactive Tools on EVERY floor (Circuit Reader, Team Meeting Hub, Cheers Cannon)
+        // Spawn Universal Interactive Tools on EVERY floor (Circuit Reader & Cheers Cannon)
         const stations = [
           createCircuitTerminal(lvl),
-          createMeetingHub(lvl),
           createCheersCannon(lvl),
         ];
         for (const st of stations) {

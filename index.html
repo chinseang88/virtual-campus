@@ -597,37 +597,11 @@
 
     .tool-row {
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: 1fr 1fr;
       gap: 4px;
     }
     .hud-btn.tool-circuit { background: rgba(0, 104, 181, 0.35); border-color: rgba(56, 189, 248, 0.6); color: #bae6fd; }
-    .hud-btn.tool-meet { background: rgba(22, 163, 74, 0.28); border-color: rgba(74, 222, 128, 0.55); color: #bbf7d0; }
     .hud-btn.tool-cheers { background: rgba(217, 70, 239, 0.28); border-color: rgba(244, 114, 182, 0.6); color: #fbcfe8; }
-
-    /* Team Meeting Floating Banner */
-    #meeting-banner {
-      position: fixed;
-      top: 56px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(15, 23, 42, 0.94);
-      border: 1.5px solid #4ade80;
-      border-radius: 999px;
-      padding: 6px 14px;
-      z-index: 55;
-      display: none;
-      align-items: center;
-      gap: 8px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
-      backdrop-filter: blur(10px);
-      font-size: 12px;
-      font-weight: 600;
-      color: #f8fafc;
-      max-width: calc(100vw - 460px);
-      flex-wrap: wrap;
-      justify-content: center;
-    }
-    #meeting-banner.open { display: flex; }
 
     /* circuit.intel.com Reader Modal */
     #circuit-modal {
@@ -770,22 +744,13 @@
     </div>
     <div class="tool-row" title="Available on every floor (F1–F6)">
       <button id="btn-circuit" class="hud-btn tool-circuit" type="button" title="Read circuit.intel.com">📰 Circuit</button>
-      <button id="btn-meeting" class="hud-btn tool-meet" type="button" title="Gather virtual map bots only (in-map) [M]">👥 Meet</button>
       <button id="btn-cheers" class="hud-btn tool-cheers" type="button" title="Celebrate & Cheers! [H]">🎉 Cheers</button>
     </div>
     <div class="comfort-tip" id="comfort-tip">
-      <strong>Campus 3/4:</strong> Scroll/+/- zoom. Click floor to walk, [M] Meet, [H] Cheers, [E] Interact!
+      <strong>Campus 3/4:</strong> Scroll/+/- zoom. Click floor to walk, [H] Cheers, [E] Interact!
     </div>
     <div class="elevator-title">Campus Elevator (F1–F6)</div>
     <div id="floor-buttons"></div>
-  </div>
-
-  <!-- In-Map Virtual Team Huddle Pill -->
-  <div id="meeting-banner">
-    <span id="meeting-status-text">👥 Map Huddle Active</span>
-    <button id="btn-meeting-note" class="mini-btn" type="button" style="background:#0284c7;color:#fff;">📋 Note</button>
-    <button id="btn-meeting-cheers" class="mini-btn" type="button" style="background:#db2777;color:#fff;">🥂 Cheers!</button>
-    <button id="btn-meeting-end" class="mini-btn del-btn" type="button">End</button>
   </div>
 
   <!-- circuit.intel.com Reader Modal -->
